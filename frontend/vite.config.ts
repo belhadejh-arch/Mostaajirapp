@@ -3,7 +3,6 @@ import react from "@vitejs/plugin-react";
 import svgr from "vite-plugin-svgr";
 import path from "path";
 
-// إعداد Vite للإنتاج (Production) — بدون أي ملحقات بيئة التطوير
 export default defineConfig({
   plugins: [
     react(),
@@ -19,6 +18,11 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+  },
+  server: {
+    host: "0.0.0.0",
+    port: 5000,
+    allowedHosts: true,
   },
   build: {
     outDir: "dist",
