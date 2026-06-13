@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Package, QrCode, Clock, CheckCircle, XCircle, ChevronRight, Timer, PhoneCall, MapPin, RefreshCw, AlertCircle, AlertTriangle, Star, User, MessageSquare, Camera, Keyboard } from 'lucide-react';
+import { Package, QrCode, Clock, CheckCircle, XCircle, Timer, PhoneCall, MapPin, RefreshCw, AlertCircle, AlertTriangle, Star, User, MessageSquare, Camera, Keyboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -248,7 +248,7 @@ function ChatDialog({ rental, currentUserId, open, onClose }: {
 function RentalCard({ rental, asOwner }: { rental: Rental; asOwner: boolean }) {
   const navigate = useNavigate();
   const { t, isRTL } = useLanguage();
-  const { acceptRental, rejectRental, startDelivery, completeReturn, requestExtension, acceptExtension, rejectExtension, scanHandover, scanReturn, rateOwner } = useData();
+  const { acceptRental, rejectRental, requestExtension, acceptExtension, rejectExtension, scanHandover, scanReturn, rateOwner } = useData();
   const { user } = useAuth();
   const [qrType, setQrType] = useState<'delivery' | 'return' | null>(null);
   const [extDays, setExtDays] = useState('');
@@ -630,7 +630,6 @@ export default function RentalsPage() {
   const { t, isRTL } = useLanguage();
   const { rentals } = useData();
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [tab, setTab] = useState<'renter' | 'owner'>('renter');
 
   if (!user) return (

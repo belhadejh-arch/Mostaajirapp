@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Wallet, TrendingUp, PlusCircle, ArrowDownCircle, ArrowUpCircle, Lock, ExternalLink, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';

@@ -25,10 +25,10 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ["react", "react-dom", "react-router-dom"],
-          supabase: ["@supabase/supabase-js"],
-          ui: ["@radix-ui/react-dialog", "@radix-ui/react-select", "@radix-ui/react-tabs"],
+        manualChunks: (id) => {
+          if (id.includes('node_modules/@supabase')) return 'supabase';
+          if (id.includes('node_modules/@radix-ui') || id.includes('node_modules/lucide-react')) return 'ui';
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/react-router-dom')) return 'vendor';
         },
       },
     },
