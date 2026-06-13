@@ -11,7 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useData } from '@/contexts/DataContext';
 import { useAdmin } from '@/contexts/AdminContext';
-import { supabase } from '@/db/supabase';
+import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -45,16 +45,9 @@ export default function WalletPage() {
   useEffect(() => {
     if (!user) return;
     setTxLoading(true);
-    supabase
-      .from('top_up_transactions')
-      .select('id, amount, status, provider, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(30)
-      .then(({ data }) => {
-        if (data) setTopUpTx(data as TxRow[]);
-        setTxLoading(false);
-      });
+    api.get<TxRow[]>('/wallet/transactions')
+      .then(data => { setTopUpTx(data); setTxLoading(false); })
+      .catch(() => setTxLoading(false));
   }, [user?.id]);
 
   /* ── معالجة العودة من Chargily ── */
@@ -67,21 +60,12 @@ export default function WalletPage() {
       window.history.replaceState({}, '', '/wallet');
       if (user) {
         setTimeout(() => {
-          supabase
-            .from('profiles')
-            .select('wallet_balance')
-            .eq('id', user.id)
-            .single()
-            .then(({ data }) => {
-              if (data) updateUser({ walletBalance: data.wallet_balance });
-            });
-          supabase
-            .from('top_up_transactions')
-            .select('id, amount, status, provider, created_at')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(30)
-            .then(({ data }) => { if (data) setTopUpTx(data as TxRow[]); });
+          api.get<{ wallet_balance: number }>('/auth/me')
+            .then(data => { if (data) updateUser({ walletBalance: data.wallet_balance }); })
+            .catch(() => {});
+          api.get<TxRow[]>('/wallet/transactions')
+            .then(data => setTopUpTx(data))
+            .catch(() => {});
         }, 3000);
       }
     } else if (status === 'cancel') {
@@ -108,16 +92,14 @@ export default function WalletPage() {
     try {
       const returnUrl = `${window.location.origin}/wallet?status=success&amount=${selectedAmount}`;
       const cancelUrl = `${window.location.origin}/wallet?status=cancel`;
-      const { data, error } = await supabase.functions.invoke('chargily-create-checkout', {
-        body: {
-          amount: selectedAmount,
-          userId: user.id,
-          userEmail: (user as unknown as { email?: string }).email || '',
-          returnUrl,
-          cancelUrl,
-        },
+      const data = await api.post<{ checkoutUrl: string }>('/wallet/checkout', {
+        amount: selectedAmount,
+        userId: user.id,
+        userEmail: (user as unknown as { email?: string }).email || '',
+        returnUrl,
+        cancelUrl,
       });
-      if (error || !data?.checkoutUrl) {
+      if (!data?.checkoutUrl) {
         toast.error('فشل في إنشاء رابط الدفع. تحقق من إعدادات Chargily.');
         setLoading(false);
         return;
@@ -138,16 +120,19 @@ export default function WalletPage() {
     if (amt < settings.minWithdrawal) { toast.error(t('minWithdrawal')); return; }
     if (amt > user.earningsBalance) { toast.error(t('insufficientEarnings')); return; }
     setLoading(true);
-    const { error } = await supabase.from('withdrawal_requests').insert({
-      user_id: user.id,
-      user_name: withdrawName.trim(),
-      phone: withdrawPhone.trim(),
-      ccp_number: ccpNumber.trim(),
-      amount: amt,
-      status: 'pending',
-    });
+    try {
+      await api.post('/wallet/withdraw', {
+        userName: withdrawName.trim(),
+        phone: withdrawPhone.trim(),
+        ccpNumber: ccpNumber.trim(),
+        amount: amt,
+      });
+    } catch {
+      setLoading(false);
+      toast.error('فشل في تقديم الطلب');
+      return;
+    }
     setLoading(false);
-    if (error) { toast.error('فشل في تقديم الطلب'); return; }
     updateUser({ earningsBalance: user.earningsBalance - amt });
     setWithdrawOpen(false);
     setWithdrawAmount('');

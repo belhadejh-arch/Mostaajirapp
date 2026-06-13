@@ -23,6 +23,12 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 5000,
     allowedHosts: true,
+    proxy: {
+      "/api": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     outDir: "dist",
@@ -30,7 +36,6 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: (id) => {
-          if (id.includes('node_modules/@supabase')) return 'supabase';
           if (id.includes('node_modules/@radix-ui') || id.includes('node_modules/lucide-react')) return 'ui';
           if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/react-router-dom')) return 'vendor';
         },

@@ -17,7 +17,7 @@ import { useAdmin } from '@/contexts/AdminContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useData } from '@/contexts/DataContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { supabase } from '@/db/supabase';
+import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { AdminUser } from '@/contexts/AdminContext';
@@ -1424,17 +1424,16 @@ export default function AdminPage() {
                 className="flex-1"
                 disabled={!broadcastTitle.trim() || !broadcastBody.trim()}
                 onClick={async () => {
-                  const { data: allUsers } = await supabase.from('profiles').select('id');
-                  if (!allUsers) { toast.error('لا يوجد مستخدمون'); return; }
-                  const notifications = allUsers.map((u: { id: string }) => ({
-                    user_id: u.id,
+                  const userIds = await api.get<string[]>('/admin/users/ids').catch(() => []);
+                  if (!userIds.length) { toast.error('لا يوجد مستخدمون'); return; }
+                  const notifications = userIds.map((id: string) => ({
+                    user_id: id,
                     title: broadcastTitle.trim(),
                     body: broadcastBody.trim(),
                     type: broadcastType,
-                    read: false,
                   }));
-                  await supabase.from('notifications').insert(notifications);
-                  toast.success(`تم إرسال الإشعار لـ ${allUsers.length} مستخدم`);
+                  await api.post('/admin/notifications/broadcast', { notifications });
+                  toast.success(`تم إرسال الإشعار لـ ${userIds.length} مستخدم`);
                   setBroadcastOpen(false);
                   setBroadcastTitle('');
                   setBroadcastBody('');

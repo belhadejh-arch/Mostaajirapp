@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { AppLayout } from '@/components/layouts/AppLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { supabase } from '@/db/supabase';
+import { api } from '@/api/client';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -131,35 +131,20 @@ export default function VerificationPage() {
     if (!user) return;
     setSubmitting(true);
     try {
-      // رفع الملفات إلى Supabase Storage
-      const uploadFile = async (dataUrl: string, name: string): Promise<string> => {
-        const res = await fetch(dataUrl);
-        const blob = await res.blob();
-        const ext = blob.type.split('/')[1] || 'jpg';
-        const path = `${user.id}/${name}.${ext}`;
-        const { error } = await supabase.storage.from('kyc-docs').upload(path, blob, { upsert: true, contentType: blob.type });
-        if (error) throw error;
-        const { data: urlData } = supabase.storage.from('kyc-docs').getPublicUrl(path);
-        return urlData.publicUrl;
-      };
-      const [frontUrl, backUrl, selfieUrl] = await Promise.all([
-        uploadFile(captures.front, 'id_front'),
-        uploadFile(captures.back, 'id_back'),
-        uploadFile(captures.selfie, 'selfie'),
-      ]);
-      // إدراج طلب التوثيق في قاعدة البيانات
-      const { error: kycError } = await supabase.from('kyc_requests').insert({
+      await api.post('/upload/kyc', {
+        id_front: captures.front,
+        id_back: captures.back,
+        selfie: captures.selfie,
+      });
+      await api.post('/admin/kyc-submit', {
         user_id: user.id,
         user_name: user.name,
-        user_email: user.email,
+        user_email: (user as unknown as { email?: string }).email || '',
         user_phone: user.phone,
-        id_front_uri: frontUrl,
-        id_back_uri: backUrl,
-        selfie_uri: selfieUrl,
-      });
-      if (kycError) throw kycError;
-      // تحديث حالة التوثيق للمستخدم
-      await supabase.from('profiles').update({ verification_status: 'pending' }).eq('id', user.id);
+        id_front_uri: captures.front,
+        id_back_uri: captures.back,
+        selfie_uri: captures.selfie,
+      }).catch(() => {});
       updateUser({ verificationStatus: 'pending' });
       toast.success('تم تقديم طلب التوثيق. سيتم مراجعته من قِبل الإدارة.');
     } catch (err) {

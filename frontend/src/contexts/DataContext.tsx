@@ -1,15 +1,13 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { supabase } from '@/db/supabase';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { api } from '@/api/client';
 import type { Product, Rental, RentalStatus, Dispute, DisputeParty, DisputeStatus } from '@/types';
-import { CATEGORIES, calculateRentalPrice, calculateDeposit, calculateCommissionRate } from '@/constants/categories';
+import { CATEGORIES } from '@/constants/categories';
 
-// دالة حساب العمولة والصافي
 const calcCommission = (rentalPrice: number, days: number, commissionRate: number) => {
   const gross = rentalPrice * days;
   const commission = Math.round(gross * (commissionRate / 100));
   return { gross, commission, net: gross - commission };
 };
-
 
 interface DataContextType {
   products: Product[];
@@ -25,11 +23,7 @@ interface DataContextType {
   updateProduct: (productId: string, updates: Partial<Product>) => Promise<void>;
   toggleHideProduct: (productId: string) => Promise<void>;
   deleteProduct: (productId: string) => Promise<void>;
-  createRental: (params: {
-    productId: string; durationDays: number;
-    renterId: string; renterName: string; renterPhone: string;
-    renterAddress: string; renterWilaya: string; selfPickup: boolean;
-  }) => Promise<string>;
+  createRental: (params: { productId: string; durationDays: number; renterId: string; renterName: string; renterPhone: string; renterAddress: string; renterWilaya: string; selfPickup: boolean; }) => Promise<string>;
   updateRentalStatus: (rentalId: string, status: RentalStatus) => Promise<void>;
   acceptRental: (rentalId: string) => Promise<void>;
   rejectRental: (rentalId: string) => Promise<void>;
@@ -42,18 +36,15 @@ interface DataContextType {
   scanReturn: (token: string, lessorId: string) => Promise<{ success: boolean; message: string }>;
   getOwnerStats: (ownerId: string) => { products: number; rentals: number; totalEarnings: number; monthlyEarnings: number; available: number; rented: number };
   getRenterStats: (renterId: string) => { totalOrders: number; totalRentals: number; totalExpenses: number; frozenDeposits: number };
-  fileDispute: (params: {
-    rentalId: string; filedBy: DisputeParty; userId: string;
-    userName: string; userPhone: string; title: string; description: string;
-  }) => Promise<string>;
+  fileDispute: (params: { rentalId: string; filedBy: DisputeParty; userId: string; userName: string; userPhone: string; title: string; description: string; }) => Promise<string>;
   updateDisputeStatus: (disputeId: string, status: DisputeStatus, adminNotes?: string) => Promise<void>;
   getDisputesByRental: (rentalId: string) => Dispute[];
   rateOwner: (params: { ownerId: string; renterId: string; rentalId: string; rating: number; comment?: string }) => Promise<void>;
+  refreshData: () => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | null>(null);
 
-// تحويل صف products من Supabase إلى Product
 function rowToProduct(row: Record<string, unknown>): Product {
   return {
     id: row.id as string,
@@ -96,7 +87,6 @@ function rowToProduct(row: Record<string, unknown>): Product {
   };
 }
 
-// تحويل صف rentals
 function rowToRental(row: Record<string, unknown>): Rental {
   return {
     id: row.id as string,
@@ -136,41 +126,24 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // ── جلب البيانات الأولية ──
-  useEffect(() => {
-    async function loadData() {
-      const [{ data: pData }, { data: rData }] = await Promise.all([
-        supabase.from('products').select('*').order('created_at', { ascending: false }),
-        supabase.from('rentals').select('*').order('created_at', { ascending: false }),
+  const loadData = useCallback(async () => {
+    try {
+      const [pData, rData] = await Promise.all([
+        api.get<Record<string, unknown>[]>('/products'),
+        api.get<Record<string, unknown>[]>('/rentals').catch(() => [] as Record<string, unknown>[]),
       ]);
-      if (pData) setProducts(pData.map(rowToProduct));
-      if (rData) setRentals(rData.map(rowToRental));
-    }
-    loadData();
+      setProducts(pData.map(rowToProduct));
+      setRentals(rData.map(rowToRental));
+    } catch { /* silent */ }
   }, []);
 
-  // ── Realtime: منتجات ──
   useEffect(() => {
-    const channel = supabase.channel('data-products')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, payload => {
-        if (payload.eventType === 'DELETE') {
-          setProducts(prev => prev.filter(p => p.id !== (payload.old as Record<string, unknown>).id));
-          return;
-        }
-        const row = payload.new as Record<string, unknown>;
-        if (!row?.id) return;
-        const prod = rowToProduct(row);
-        setProducts(prev => {
-          const idx = prev.findIndex(p => p.id === prod.id);
-          if (idx >= 0) { const n = [...prev]; n[idx] = prod; return n; }
-          return [prod, ...prev];
-        });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
+    loadData();
+    pollRef.current = setInterval(loadData, 30_000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [loadData]);
 
   const getTopRated = useCallback((limit = 8) =>
     [...products].filter(p => p.reviewStatus === 'approved' && !p.isFrozen && !p.isHidden).sort((a, b) => b.rating - a.rating).slice(0, limit), [products]);
@@ -184,82 +157,57 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const getNearby = useCallback((wilayaCode: number, limit = 6) =>
     products.filter(p => p.reviewStatus === 'approved' && p.wilayaCode === wilayaCode && !p.isFrozen && !p.isHidden).slice(0, limit), [products]);
 
-  const getProductById = useCallback((id: string) =>
-    products.find(p => p.id === id), [products]);
+  const getProductById = useCallback((id: string) => products.find(p => p.id === id), [products]);
 
   const getCategoryName = useCallback((categoryId: string, lang: 'ar' | 'en' | 'fr') => {
     const cat = CATEGORIES.find(c => c.id === categoryId);
     return cat ? cat[lang] : categoryId;
   }, []);
 
-  const addProduct = useCallback(async (
-    data: Omit<Product, 'id' | 'totalRentals' | 'rating' | 'reviewCount' | 'ownerRating' | 'ownerReviewCount' | 'ownerTotalRentals' | 'createdAt'>
-  ) => {
-    await supabase.from('products').insert({
-      owner_id: data.ownerId,
-      owner_name: data.ownerName,
-      owner_avatar_uri: data.ownerAvatarUri || null,
-      owner_phone: data.ownerPhone || null,
-      owner_address: data.ownerAddress || null,
-      owner_wilaya_code: data.ownerWilayaCode || null,
-      owner_wilaya_name: data.ownerWilayaName || null,
-      title: data.title,
-      description: data.description,
-      images: data.images,
-      video_uri: data.videoUri || null,
-      category_id: data.categoryId,
-      subcategory_id: data.subcategoryId,
-      wilaya_code: data.wilayaCode,
-      wilaya_name: data.wilayaName,
-      purchase_price: data.purchasePrice,
-      purchase_year: data.purchaseYear,
-      rental_price: data.rentalPrice,
-      deposit: data.deposit,
-      commission_rate: data.commissionRate,
-      delivery_available: data.deliveryAvailable,
-      stock_quantity: data.stockQuantity ?? 1,
-      available_quantity: data.stockQuantity ?? 1,
-      review_status: 'pending',
+  const addProduct = useCallback(async (data: Omit<Product, 'id' | 'totalRentals' | 'rating' | 'reviewCount' | 'ownerRating' | 'ownerReviewCount' | 'ownerTotalRentals' | 'createdAt'>) => {
+    const row = await api.post<Record<string, unknown>>('/products', {
+      owner_id: data.ownerId, owner_name: data.ownerName, owner_avatar_uri: data.ownerAvatarUri || null,
+      owner_phone: data.ownerPhone || null, owner_address: data.ownerAddress || null,
+      owner_wilaya_code: data.ownerWilayaCode || null, owner_wilaya_name: data.ownerWilayaName || null,
+      title: data.title, description: data.description, images: data.images, video_uri: data.videoUri || null,
+      category_id: data.categoryId, subcategory_id: data.subcategoryId, wilaya_code: data.wilayaCode,
+      wilaya_name: data.wilayaName, purchase_price: data.purchasePrice, purchase_year: data.purchaseYear,
+      rental_price: data.rentalPrice, deposit: data.deposit, commission_rate: data.commissionRate,
+      delivery_available: data.deliveryAvailable, stock_quantity: data.stockQuantity ?? 1,
     });
-    // Realtime يُحدّث الحالة تلقائياً
+    setProducts(prev => [rowToProduct(row), ...prev]);
   }, []);
 
   const updateProduct = useCallback(async (productId: string, updates: Partial<Product>) => {
-    const dbUpdates: Record<string, unknown> = {};
-    if (updates.title !== undefined) dbUpdates.title = updates.title;
-    if (updates.description !== undefined) dbUpdates.description = updates.description;
-    if (updates.images !== undefined) dbUpdates.images = updates.images;
-    if (updates.deliveryAvailable !== undefined) dbUpdates.delivery_available = updates.deliveryAvailable;
-    if (updates.isHidden !== undefined) dbUpdates.is_hidden = updates.isHidden;
-    if (updates.isFrozen !== undefined) dbUpdates.is_frozen = updates.isFrozen;
-    if (updates.removalReason !== undefined) dbUpdates.removal_reason = updates.removalReason;
-    if (updates.reviewStatus !== undefined) dbUpdates.review_status = updates.reviewStatus;
-    if (updates.rejectionReason !== undefined) dbUpdates.rejection_reason = updates.rejectionReason;
-    if (updates.status !== undefined) dbUpdates.status = updates.status;
-    if (updates.availableQuantity !== undefined) dbUpdates.available_quantity = updates.availableQuantity;
-    if (Object.keys(dbUpdates).length > 0) {
-      await supabase.from('products').update(dbUpdates).eq('id', productId);
-    }
+    const body: Record<string, unknown> = {};
+    if (updates.title !== undefined) body.title = updates.title;
+    if (updates.description !== undefined) body.description = updates.description;
+    if (updates.images !== undefined) body.images = updates.images;
+    if (updates.deliveryAvailable !== undefined) body.delivery_available = updates.deliveryAvailable;
+    if (updates.isHidden !== undefined) body.is_hidden = updates.isHidden;
+    if (updates.isFrozen !== undefined) body.is_frozen = updates.isFrozen;
+    if (updates.removalReason !== undefined) body.removal_reason = updates.removalReason;
+    if (updates.reviewStatus !== undefined) body.review_status = updates.reviewStatus;
+    if (updates.rejectionReason !== undefined) body.rejection_reason = updates.rejectionReason;
+    if (updates.status !== undefined) body.status = updates.status;
+    if (updates.availableQuantity !== undefined) body.available_quantity = updates.availableQuantity;
+    if (Object.keys(body).length > 0) await api.put(`/products/${productId}`, body);
     setProducts(prev => prev.map(p => p.id === productId ? { ...p, ...updates } : p));
   }, []);
 
   const toggleHideProduct = useCallback(async (productId: string) => {
     const prod = products.find(p => p.id === productId);
     if (!prod) return;
-    await supabase.from('products').update({ is_hidden: !prod.isHidden }).eq('id', productId);
+    await api.put(`/products/${productId}`, { is_hidden: !prod.isHidden });
     setProducts(prev => prev.map(p => p.id === productId ? { ...p, isHidden: !p.isHidden } : p));
   }, [products]);
 
   const deleteProduct = useCallback(async (productId: string) => {
-    await supabase.from('products').delete().eq('id', productId);
+    await api.delete(`/products/${productId}`);
     setProducts(prev => prev.filter(p => p.id !== productId));
   }, []);
 
-  const createRental = useCallback(async (params: {
-    productId: string; durationDays: number;
-    renterId: string; renterName: string; renterPhone: string;
-    renterAddress: string; renterWilaya: string; selfPickup: boolean;
-  }): Promise<string> => {
+  const createRental = useCallback(async (params: { productId: string; durationDays: number; renterId: string; renterName: string; renterPhone: string; renterAddress: string; renterWilaya: string; selfPickup: boolean; }): Promise<string> => {
     const product = products.find(p => p.id === params.productId);
     if (!product) return '';
     const { gross, commission, net } = calcCommission(product.rentalPrice, params.durationDays, product.commissionRate);
@@ -267,51 +215,36 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const rentalId = crypto.randomUUID();
     const handoverToken = crypto.randomUUID();
     const returnToken = crypto.randomUUID();
-    const { error } = await supabase.from('rentals').insert({
-      id: rentalId,
-      product_id: product.id, product_title: product.title,
-      product_image: product.images[0] || null,
-      owner_id: product.ownerId, owner_name: product.ownerName,
-      renter_id: params.renterId, renter_name: params.renterName,
-      renter_phone: params.renterPhone, renter_address: params.renterAddress,
-      renter_wilaya: params.renterWilaya, self_pickup: params.selfPickup,
-      duration_days: params.durationDays,
-      daily_rate: product.rentalPrice, deposit: product.deposit,
-      commission_amount: commission, net_earnings: net,
-      total_amount: totalAmount, escrow_amount: totalAmount,
-      qr_code_delivery: handoverToken,
-      qr_code_return: returnToken,
-      handover_token: handoverToken,
-      return_token: returnToken,
-    });
-    if (error) return '';
-    const newAvail = Math.max(0, product.availableQuantity - 1);
-    await supabase.from('products').update({ available_quantity: newAvail, status: newAvail === 0 ? 'rented' : 'available' }).eq('id', product.id);
-    const { data: rData } = await supabase.from('rentals').select('*').eq('id', rentalId).maybeSingle();
-    if (rData) setRentals(prev => [rowToRental(rData), ...prev]);
-    return rentalId;
+    try {
+      const row = await api.post<Record<string, unknown>>('/rentals', {
+        id: rentalId, product_id: product.id, product_title: product.title,
+        product_image: product.images[0] || null,
+        owner_id: product.ownerId, owner_name: product.ownerName,
+        renter_id: params.renterId, renter_name: params.renterName,
+        renter_phone: params.renterPhone, renter_address: params.renterAddress,
+        renter_wilaya: params.renterWilaya, self_pickup: params.selfPickup,
+        duration_days: params.durationDays, daily_rate: product.rentalPrice,
+        deposit: product.deposit, commission_amount: commission, net_earnings: net,
+        total_amount: totalAmount, handover_token: handoverToken, return_token: returnToken,
+      });
+      setRentals(prev => [rowToRental(row), ...prev]);
+      setProducts(prev => prev.map(p => p.id === product.id
+        ? { ...p, availableQuantity: Math.max(0, p.availableQuantity - 1), status: p.availableQuantity - 1 <= 0 ? 'rented' : 'available' }
+        : p
+      ));
+      return rentalId;
+    } catch { return ''; }
   }, [products]);
 
-  const updateRentalStatus = useCallback(async (rentalId: string, status: RentalStatus) => {
-    await supabase.from('rentals').update({ status }).eq('id', rentalId);
-    setRentals(prev => prev.map(r => r.id === rentalId ? { ...r, status } : r));
+  const patchRental = useCallback(async (rentalId: string, body: Record<string, unknown>) => {
+    const row = await api.put<Record<string, unknown>>(`/rentals/${rentalId}/status`, body);
+    setRentals(prev => prev.map(r => r.id === rentalId ? rowToRental(row) : r));
   }, []);
 
-  const acceptRental = useCallback(async (rentalId: string) => {
-    await supabase.from('rentals').update({ status: 'accepted' }).eq('id', rentalId);
-    setRentals(prev => prev.map(r => r.id === rentalId ? { ...r, status: 'accepted' } : r));
-  }, []);
-
-  const rejectRental = useCallback(async (rentalId: string) => {
-    await supabase.from('rentals').update({ status: 'cancelled', escrow_amount: 0 }).eq('id', rentalId);
-    setRentals(prev => prev.map(r => r.id === rentalId ? { ...r, status: 'cancelled', escrowAmount: 0 } : r));
-  }, []);
-
-  const startDelivery = useCallback(async (rentalId: string) => {
-    const now = new Date().toISOString();
-    await supabase.from('rentals').update({ status: 'active', start_time: now }).eq('id', rentalId);
-    setRentals(prev => prev.map(r => r.id === rentalId ? { ...r, status: 'active', startTime: now } : r));
-  }, []);
+  const updateRentalStatus = useCallback((rentalId: string, status: RentalStatus) => patchRental(rentalId, { status }), [patchRental]);
+  const acceptRental = useCallback((rentalId: string) => patchRental(rentalId, { status: 'accepted' }), [patchRental]);
+  const rejectRental = useCallback((rentalId: string) => patchRental(rentalId, { status: 'cancelled', escrow_amount: 0 }), [patchRental]);
+  const startDelivery = useCallback((rentalId: string) => patchRental(rentalId, { status: 'active', start_time: new Date().toISOString() }), [patchRental]);
 
   const completeReturn = useCallback(async (rentalId: string) => {
     const rental = rentals.find(r => r.id === rentalId);
@@ -319,78 +252,60 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     let latePenalty = 0;
     if (rental.startTime) {
       const expectedEnd = new Date(rental.startTime).getTime() + rental.durationDays * 24 * 3600000;
-      const now = Date.now();
-      if (now > expectedEnd) latePenalty = Math.ceil((now - expectedEnd) / 3600000) * 150;
+      if (Date.now() > expectedEnd) latePenalty = Math.ceil((Date.now() - expectedEnd) / 3600000) * 150;
     }
-    const endTime = new Date().toISOString();
-    await supabase.from('rentals').update({ status: 'completed', end_time: endTime, late_penalty: latePenalty, escrow_amount: 0 }).eq('id', rentalId);
-    setRentals(prev => prev.map(r => r.id === rentalId ? { ...r, status: 'completed', endTime, latePenalty, escrowAmount: 0 } : r));
+    await patchRental(rentalId, { status: 'completed', end_time: new Date().toISOString(), late_penalty: latePenalty, escrow_amount: 0 });
     const prod = products.find(p => p.id === rental.productId);
     if (prod) {
       const newAvail = Math.min(prod.stockQuantity, prod.availableQuantity + 1);
-      await supabase.from('products').update({ available_quantity: newAvail, status: newAvail > 0 ? 'available' : 'rented' }).eq('id', prod.id);
+      await api.put(`/products/${prod.id}`, { available_quantity: newAvail, status: newAvail > 0 ? 'available' : 'rented' });
+      setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, availableQuantity: newAvail, status: newAvail > 0 ? 'available' : 'rented' } : p));
     }
-  }, [rentals, products]);
+  }, [rentals, products, patchRental]);
 
-  const requestExtension = useCallback(async (rentalId: string, days: number) => {
-    await supabase.from('rentals').update({ status: 'extend_requested', extension_requested: true, extension_days: days }).eq('id', rentalId);
-    setRentals(prev => prev.map(r => r.id === rentalId ? { ...r, status: 'extend_requested', extensionRequested: true, extensionDays: days } : r));
-  }, []);
+  const requestExtension = useCallback((rentalId: string, days: number) =>
+    patchRental(rentalId, { status: 'extend_requested', extension_requested: true, extension_days: days }), [patchRental]);
 
   const acceptExtension = useCallback(async (rentalId: string) => {
     const rental = rentals.find(r => r.id === rentalId);
     if (!rental) return;
     const addDays = rental.extensionDays || 0;
-    const extraCost = rental.dailyRate * addDays;
     const newDuration = rental.durationDays + addDays;
-    const newTotal = rental.totalAmount + extraCost;
-    await supabase.from('rentals').update({ status: 'active', duration_days: newDuration, total_amount: newTotal, extension_requested: false, extension_days: null }).eq('id', rentalId);
-    setRentals(prev => prev.map(r => r.id === rentalId ? { ...r, status: 'active', durationDays: newDuration, totalAmount: newTotal, extensionRequested: false, extensionDays: undefined } : r));
-  }, [rentals]);
+    const newTotal = rental.totalAmount + rental.dailyRate * addDays;
+    await patchRental(rentalId, { status: 'active', duration_days: newDuration, total_amount: newTotal, extension_requested: false, extension_days: null });
+  }, [rentals, patchRental]);
+
+  const rejectExtension = useCallback((rentalId: string) =>
+    patchRental(rentalId, { status: 'active', extension_requested: false }), [patchRental]);
 
   const scanHandover = useCallback(async (token: string, lessorId: string) => {
-    const { data, error } = await supabase.functions.invoke('rental-handover-scan', {
-      body: { token, lessorId },
-    });
-    if (error) return { success: false, message: error.message };
-    // تحديث المحلي
-    const { data: rData } = await supabase.from('rentals').select('*').eq('handover_token', token).maybeSingle();
-    if (rData) {
-      setRentals(prev => prev.map(r => r.id === rData.id ? rowToRental(rData) : r));
+    try {
+      const data = await api.post<{ success: boolean; message: string; rental?: Record<string, unknown> }>('/rentals/handover-scan', { token, lessorId });
+      if (data.rental) setRentals(prev => prev.map(r => r.id === (data.rental as Record<string, unknown>).id ? rowToRental(data.rental as Record<string, unknown>) : r));
+      return { success: data.success, message: data.message };
+    } catch (e: unknown) {
+      return { success: false, message: (e as Error).message };
     }
-    return { success: data?.success, message: data?.message || data?.error };
   }, []);
 
   const scanReturn = useCallback(async (token: string, lessorId: string) => {
-    const { data, error } = await supabase.functions.invoke('rental-return-scan', {
-      body: { token, lessorId },
-    });
-    if (error) return { success: false, message: error.message };
-    const { data: rData } = await supabase.from('rentals').select('*').eq('return_token', token).maybeSingle();
-    if (rData) {
-      setRentals(prev => prev.map(r => r.id === rData.id ? rowToRental(rData) : r));
+    try {
+      const data = await api.post<{ success: boolean; message: string; rental?: Record<string, unknown> }>('/rentals/return-scan', { token, lessorId });
+      if (data.rental) setRentals(prev => prev.map(r => r.id === (data.rental as Record<string, unknown>).id ? rowToRental(data.rental as Record<string, unknown>) : r));
+      return { success: data.success, message: data.message };
+    } catch (e: unknown) {
+      return { success: false, message: (e as Error).message };
     }
-    return { success: data?.success, message: data?.message || data?.error };
-  }, []);
-
-  const rejectExtension = useCallback(async (rentalId: string) => {
-    await supabase.from('rentals').update({ status: 'active', extension_requested: false }).eq('id', rentalId);
-    setRentals(prev => prev.map(r => r.id === rentalId ? { ...r, status: 'active', extensionRequested: false } : r));
   }, []);
 
   const getOwnerStats = useCallback((ownerId: string) => {
     const ownerProducts = products.filter(p => p.ownerId === ownerId);
     const ownerRentals = rentals.filter(r => r.ownerId === ownerId && r.status === 'completed');
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const monthlyEarnings = ownerRentals
-      .filter(r => r.endTime && new Date(r.endTime).getTime() > monthStart)
-      .reduce((sum, r) => sum + r.netEarnings, 0);
+    const now = new Date(); const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     return {
-      products: ownerProducts.length,
-      rentals: ownerRentals.length,
-      totalEarnings: ownerRentals.reduce((sum, r) => sum + r.netEarnings, 0),
-      monthlyEarnings,
+      products: ownerProducts.length, rentals: ownerRentals.length,
+      totalEarnings: ownerRentals.reduce((s, r) => s + r.netEarnings, 0),
+      monthlyEarnings: ownerRentals.filter(r => r.endTime && new Date(r.endTime).getTime() > monthStart).reduce((s, r) => s + r.netEarnings, 0),
       available: ownerProducts.filter(p => p.status === 'available').length,
       rented: ownerProducts.filter(p => p.status === 'rented').length,
     };
@@ -399,79 +314,41 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const getRenterStats = useCallback((renterId: string) => {
     const renterRentals = rentals.filter(r => r.renterId === renterId);
     const completed = renterRentals.filter(r => r.status === 'completed');
-    const frozen = renterRentals
-      .filter(r => ['pending_owner', 'accepted', 'pending_delivery', 'active'].includes(r.status))
-      .reduce((sum, r) => sum + r.deposit, 0);
-    return {
-      totalOrders: renterRentals.length,
-      totalRentals: completed.length,
-      totalExpenses: completed.reduce((sum, r) => sum + r.totalAmount, 0),
-      frozenDeposits: frozen,
-    };
+    const frozen = renterRentals.filter(r => ['pending_owner','accepted','pending_delivery','active'].includes(r.status)).reduce((s, r) => s + r.deposit, 0);
+    return { totalOrders: renterRentals.length, totalRentals: completed.length, totalExpenses: completed.reduce((s, r) => s + r.totalAmount, 0), frozenDeposits: frozen };
   }, [rentals]);
 
-  const fileDispute = useCallback(async (params: {
-    rentalId: string; filedBy: DisputeParty; userId: string;
-    userName: string; userPhone: string; title: string; description: string;
-  }): Promise<string> => {
+  const fileDispute = useCallback(async (params: { rentalId: string; filedBy: DisputeParty; userId: string; userName: string; userPhone: string; title: string; description: string; }): Promise<string> => {
     const rental = rentals.find(r => r.id === params.rentalId);
-    const { data, error } = await supabase.from('disputes').insert({
-      rental_id: params.rentalId,
-      product_title: rental?.productTitle || '',
-      filed_by: params.filedBy,
-      user_id: params.userId,
-      user_name: params.userName,
-      user_phone: params.userPhone,
-      title: params.title,
-      description: params.description,
-    }).select().maybeSingle();
-    if (error || !data) return '';
-    setDisputes(prev => [{
-      id: data.id, rentalId: params.rentalId,
-      productTitle: rental?.productTitle || '',
-      filedBy: params.filedBy, userId: params.userId,
-      userName: params.userName, userPhone: params.userPhone,
-      title: params.title, description: params.description,
-      status: 'open', createdAt: data.created_at,
-    }, ...prev]);
-    return data.id as string;
+    try {
+      const row = await api.post<Record<string, unknown>>('/disputes', {
+        rental_id: params.rentalId, product_title: rental?.productTitle || '',
+        filed_by: params.filedBy, user_id: params.userId, user_name: params.userName,
+        user_phone: params.userPhone, title: params.title, description: params.description,
+      });
+      setDisputes(prev => [{ id: row.id as string, rentalId: params.rentalId, productTitle: rental?.productTitle || '', filedBy: params.filedBy, userId: params.userId, userName: params.userName, userPhone: params.userPhone, title: params.title, description: params.description, status: 'open', createdAt: row.created_at as string }, ...prev]);
+      return row.id as string;
+    } catch { return ''; }
   }, [rentals]);
 
   const updateDisputeStatus = useCallback(async (disputeId: string, status: DisputeStatus, adminNotes?: string) => {
-    await supabase.from('disputes').update({
-      status, admin_notes: adminNotes || null,
-      resolved_at: (status === 'resolved' || status === 'rejected') ? new Date().toISOString() : null,
-    }).eq('id', disputeId);
-    setDisputes(prev => prev.map(d => d.id === disputeId
-      ? { ...d, status, adminNotes, resolvedAt: (status === 'resolved' || status === 'rejected') ? new Date().toISOString() : d.resolvedAt }
-      : d
-    ));
+    await api.put(`/disputes/${disputeId}`, { status, admin_notes: adminNotes });
+    setDisputes(prev => prev.map(d => d.id === disputeId ? { ...d, status, adminNotes, resolvedAt: ['resolved','rejected'].includes(status) ? new Date().toISOString() : d.resolvedAt } : d));
   }, []);
 
-  const getDisputesByRental = useCallback((rentalId: string) =>
-    disputes.filter(d => d.rentalId === rentalId), [disputes]);
+  const getDisputesByRental = useCallback((rentalId: string) => disputes.filter(d => d.rentalId === rentalId), [disputes]);
 
-  const rateOwner = useCallback(async (params: {
-    ownerId: string; renterId: string; rentalId: string; rating: number; comment?: string;
-  }) => {
-    await supabase.from('owner_ratings').upsert({
-      owner_id: params.ownerId,
-      renter_id: params.renterId,
-      rental_id: params.rentalId,
-      rating: params.rating,
-      comment: params.comment || null,
-    }, { onConflict: 'rental_id,renter_id' });
-    // تحديث تقييم المنتجات المرتبطة بهذا المؤجر محلياً
-    const { data: profile } = await supabase
-      .from('profiles').select('owner_rating,owner_review_count').eq('id', params.ownerId).maybeSingle();
+  const rateOwner = useCallback(async (params: { ownerId: string; renterId: string; rentalId: string; rating: number; comment?: string }) => {
+    const profile = await api.post<Record<string, unknown>>('/ratings', params);
     if (profile) {
-      setProducts(prev => prev.map(p =>
-        p.ownerId === params.ownerId
-          ? { ...p, ownerRating: profile.owner_rating || 0, ownerReviewCount: profile.owner_review_count || 0 }
-          : p
+      setProducts(prev => prev.map(p => p.ownerId === params.ownerId
+        ? { ...p, ownerRating: (profile.owner_rating as number) || 0, ownerReviewCount: (profile.owner_review_count as number) || 0 }
+        : p
       ));
     }
   }, []);
+
+  const refreshData = useCallback(() => loadData(), [loadData]);
 
   return (
     <DataContext.Provider value={{
@@ -481,10 +358,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       addProduct, updateProduct, toggleHideProduct, deleteProduct,
       createRental, updateRentalStatus, acceptRental, rejectRental,
       startDelivery, completeReturn, requestExtension, acceptExtension, rejectExtension,
-      scanHandover, scanReturn,
-      getOwnerStats, getRenterStats,
-      fileDispute, updateDisputeStatus, getDisputesByRental,
-      rateOwner,
+      scanHandover, scanReturn, getOwnerStats, getRenterStats,
+      fileDispute, updateDisputeStatus, getDisputesByRental, rateOwner, refreshData,
     }}>
       {children}
     </DataContext.Provider>

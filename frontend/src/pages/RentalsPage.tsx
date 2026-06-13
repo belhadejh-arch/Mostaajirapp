@@ -13,7 +13,7 @@ import { AppLayout } from '@/components/layouts/AppLayout';
 import { useData } from '@/contexts/DataContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { supabase } from '@/db/supabase';
+import { api } from '@/api/client';
 import QRCode from 'react-qr-code';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -162,38 +162,35 @@ function ChatDialog({ rental, currentUserId, open, onClose }: {
 
   useEffect(() => {
     if (!open) return;
+    let active = true;
     const load = async () => {
-      const { data } = await supabase
-        .from('messages')
-        .select('id, sender_id, content, created_at')
-        .eq('rental_id', rental.id)
-        .order('created_at', { ascending: true });
-      if (data) setMessages(data);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      try {
+        const data = await api.get<typeof messages>(`/messages/${rental.id}`);
+        if (active) {
+          setMessages(data);
+          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        }
+      } catch { /* silent */ }
     };
     load();
-    const channel = supabase
-      .channel(`messages:${rental.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `rental_id=eq.${rental.id}` },
-        payload => {
-          setMessages(prev => [...prev, payload.new as typeof messages[0]]);
-          setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-        })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    const pollId = setInterval(load, 5000);
+    return () => { active = false; clearInterval(pollId); };
   }, [open, rental.id]);
 
   const sendMessage = async () => {
     if (!text.trim() || sending) return;
     setSending(true);
-    await supabase.from('messages').insert({
-      rental_id: rental.id,
-      sender_id: currentUserId,
-      receiver_id: otherId,
-      content: text.trim(),
-    });
-    setText('');
-    setSending(false);
+    try {
+      const row = await api.post<typeof messages[0]>(`/messages/${rental.id}`, {
+        content: text.trim(),
+        receiverId: otherId,
+      });
+      setMessages(prev => [...prev, row]);
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    } catch { /* silent */ } finally {
+      setText('');
+      setSending(false);
+    }
   };
 
   return (

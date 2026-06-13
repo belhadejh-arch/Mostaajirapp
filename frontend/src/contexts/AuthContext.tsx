@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { supabase } from '@/db/supabase';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { api, setToken, clearToken, getToken } from '@/api/client';
 import type { User } from '@/types';
 
 interface AuthContextType {
@@ -14,12 +14,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// تحويل بيانات Supabase إلى نموذج User الداخلي
-function profileToUser(p: Record<string, unknown>, email: string): User {
+function rowToUser(p: Record<string, unknown>): User {
   return {
     id: p.id as string,
     name: (p.name as string) || '',
-    email,
+    email: (p.email as string) || '',
     phone: (p.phone as string) || '',
     wilayaCode: (p.wilaya_code as number) || 16,
     wilayaName: (p.wilaya_name as string) || 'الجزائر',
@@ -40,105 +39,96 @@ function profileToUser(p: Record<string, unknown>, email: string): User {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // استرجاع الجلسة عند تحميل التطبيق
-  useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        await loadProfile(session.user.id, session.user.email ?? '');
-      }
-      setLoading(false);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_OUT') { setUser(null); return; }
-      if (session?.user) await loadProfile(session.user.id, session.user.email ?? '');
-      setLoading(false);
-    });
-    return () => subscription.unsubscribe();
+  const loadMe = useCallback(async () => {
+    try {
+      const data = await api.get<Record<string, unknown>>('/auth/me');
+      setUser(rowToUser(data));
+    } catch {
+      clearToken();
+      setUser(null);
+    }
   }, []);
 
-  // ── Realtime: تحديث بيانات المستخدم فورياً (حالة التوثيق، سبب الرفض) ──
   useEffect(() => {
-    if (!user?.id) return;
-    const channel = supabase.channel(`profile-${user.id}`)
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'profiles',
-        filter: `id=eq.${user.id}`,
-      }, payload => {
-        const row = payload.new as Record<string, unknown>;
-        if (!row) return;
-        setUser(prev => prev ? {
-          ...prev,
-          verificationStatus: (row.verification_status as User['verificationStatus']) ?? prev.verificationStatus,
-          kycRejectionReason: (row.kyc_rejection_reason as string | undefined) ?? prev.kycRejectionReason,
-          accountStatus: (row.account_status as User['accountStatus']) ?? prev.accountStatus,
-          walletBalance: (row.wallet_balance as number) ?? prev.walletBalance,
-          earningsBalance: (row.earnings_balance as number) ?? prev.earningsBalance,
-        } : prev);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [user?.id]);
+    if (getToken()) {
+      loadMe().finally(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
+  }, [loadMe]);
 
-  const loadProfile = async (userId: string, email: string) => {
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-    if (data) setUser(profileToUser(data, email));
-  };
+  // Poll profile every 30s to pick up verification status / balance changes
+  useEffect(() => {
+    if (!user?.id) { if (pollRef.current) clearInterval(pollRef.current); return; }
+    pollRef.current = setInterval(loadMe, 30_000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [user?.id, loadMe]);
 
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
-    if (error || !data.user) return false;
-    await loadProfile(data.user.id, data.user.email ?? '');
-    return true;
+    try {
+      const { token, user: userData } = await api.post<{ token: string; user: Record<string, unknown> }>(
+        '/auth/login', { email: email.trim().toLowerCase(), password }
+      );
+      setToken(token);
+      setUser(rowToUser(userData));
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
 
   const register = useCallback(async (data: Partial<User> & { password: string }): Promise<boolean> => {
-    const email = (data.email || '').toLowerCase().trim();
-    const { data: authData, error } = await supabase.auth.signUp({
-      email,
-      password: data.password,
-      options: {
-        data: {
+    try {
+      const { token, user: userData } = await api.post<{ token: string; user: Record<string, unknown> }>(
+        '/auth/register', {
+          email: (data.email || '').toLowerCase().trim(),
+          password: data.password,
           name: data.name || '',
           phone: data.phone || '',
-          wilaya_code: data.wilayaCode || 16,
-          wilaya_name: data.wilayaName || 'الجزائر',
-        },
-      },
-    });
-    if (error || !authData.user) return false;
-    // الـ trigger ينشئ الـ profile تلقائياً — نستريح لحظة ثم نقرأه
-    await new Promise(r => setTimeout(r, 800));
-    await loadProfile(authData.user.id, email);
-    return true;
+          wilayaCode: data.wilayaCode || 16,
+          wilayaName: data.wilayaName || 'الجزائر',
+        }
+      );
+      setToken(token);
+      setUser(rowToUser(userData));
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
 
-  const logout = useCallback(async () => {
-    await supabase.auth.signOut();
+  const logout = useCallback(() => {
+    clearToken();
     setUser(null);
   }, []);
 
   const updateUser = useCallback(async (data: Partial<User>) => {
     if (!user) return;
-    const updates: Record<string, unknown> = {};
-    if (data.name !== undefined) updates.name = data.name;
-    if (data.phone !== undefined) updates.phone = data.phone;
-    if (data.wilayaCode !== undefined) updates.wilaya_code = data.wilayaCode;
-    if (data.wilayaName !== undefined) updates.wilaya_name = data.wilayaName;
-    if (data.verificationStatus !== undefined) updates.verification_status = data.verificationStatus;
-    if (data.avatarUri !== undefined) updates.avatar_uri = data.avatarUri;
-    if (data.walletBalance !== undefined) updates.wallet_balance = data.walletBalance;
-    if (data.earningsBalance !== undefined) updates.earnings_balance = data.earningsBalance;
-    if (data.kycRejectionReason !== undefined) updates.kyc_rejection_reason = data.kycRejectionReason;
-    if (Object.keys(updates).length > 0) {
-      await supabase.from('profiles').update(updates).eq('id', user.id);
-    }
     setUser(prev => prev ? { ...prev, ...data } : prev);
+    const body: Record<string, unknown> = {};
+    if (data.name !== undefined) body.name = data.name;
+    if (data.phone !== undefined) body.phone = data.phone;
+    if (data.wilayaCode !== undefined) body.wilaya_code = data.wilayaCode;
+    if (data.wilayaName !== undefined) body.wilaya_name = data.wilayaName;
+    if (data.verificationStatus !== undefined) body.verification_status = data.verificationStatus;
+    if (data.avatarUri !== undefined) body.avatar_uri = data.avatarUri;
+    if (data.walletBalance !== undefined) body.wallet_balance = data.walletBalance;
+    if (data.earningsBalance !== undefined) body.earnings_balance = data.earningsBalance;
+    if (data.kycRejectionReason !== undefined) body.kyc_rejection_reason = data.kycRejectionReason;
+    if (Object.keys(body).length > 0) {
+      try { await api.put('/auth/profile', body); } catch { /* silent */ }
+    }
   }, [user]);
 
-  const changePassword = useCallback(async (_old: string, newPass: string): Promise<boolean> => {
-    const { error } = await supabase.auth.updateUser({ password: newPass });
-    return !error;
+  const changePassword = useCallback(async (oldPassword: string, newPassword: string): Promise<boolean> => {
+    try {
+      await api.put('/auth/password', { oldPassword, newPassword });
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
 
   return (
