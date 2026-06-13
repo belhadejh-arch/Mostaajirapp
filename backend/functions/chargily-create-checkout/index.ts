@@ -21,9 +21,12 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Payment gateway not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || 'https://qewvijawyjmuvzerakpv.supabase.co';
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    if (!supabaseUrl) {
+      return new Response(JSON.stringify({ error: 'SUPABASE_URL not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
     const webhookUrl = `${supabaseUrl}/functions/v1/chargily-webhook`;
-    const appDomain = Deno.env.get('APP_DOMAIN') || 'https://mostajir.dz';
+    const appDomain = Deno.env.get('APP_DOMAIN') || returnUrl?.split('/wallet')[0] || '';
 
     const response = await fetch('https://pay.chargily.net/api/v2/checkouts', {
       method: 'POST',
