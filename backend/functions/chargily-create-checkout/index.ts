@@ -21,7 +21,11 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Payment gateway not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const response = await fetch('https://pay.chargily.net/test/api/v2/checkouts', {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || 'https://qewvijawyjmuvzerakpv.supabase.co';
+    const webhookUrl = `${supabaseUrl}/functions/v1/chargily-webhook`;
+    const appDomain = Deno.env.get('APP_DOMAIN') || 'https://mostajir.dz';
+
+    const response = await fetch('https://pay.chargily.net/api/v2/checkouts', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${secretKey}`,
@@ -32,9 +36,9 @@ serve(async (req) => {
         currency: 'dzd',
         customer_email: userEmail,
         metadata: { user_id: userId },
-        success_url: returnUrl || 'https://mostajir.dz/wallet?status=success',
-        failure_url: cancelUrl || 'https://mostajir.dz/wallet?status=cancel',
-        webhook_endpoint: 'https://qewvijawyjmuvzerakpv.supabase.co/functions/v1/chargily-webhook',
+        success_url: returnUrl || `${appDomain}/wallet?status=success`,
+        failure_url: cancelUrl || `${appDomain}/wallet?status=cancel`,
+        webhook_endpoint: webhookUrl,
       }),
     });
 
