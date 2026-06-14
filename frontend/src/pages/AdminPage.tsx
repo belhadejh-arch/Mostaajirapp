@@ -65,6 +65,8 @@ export default function AdminPage() {
   const [logoDialogOpen, setLogoDialogOpen] = useState(false);
   const [newLogoUrl, setNewLogoUrl] = useState(settings.logoUrl);
   const [kycViewUser, setKycViewUser] = useState<AdminUser | null>(null);
+  const [userRentals, setUserRentals] = useState<Record<string, unknown>[]>([]);
+  const [userRentalsLoading, setUserRentalsLoading] = useState(false);
   const [disputeDetail, setDisputeDetail] = useState<Dispute | null>(null);
   const [disputeNotes, setDisputeNotes] = useState('');
   const [phoneSearch, setPhoneSearch] = useState('');
@@ -83,6 +85,16 @@ export default function AdminPage() {
   const [cleanupConfirmOpen, setCleanupConfirmOpen] = useState(false);
   const [cleanupType, setCleanupType] = useState<'accounts' | 'products' | null>(null);
   const logoFileRef = useRef<HTMLInputElement>(null);
+
+  // ── جلب إيجارات المستخدم عند فتح ملفه ──
+  React.useEffect(() => {
+    if (!userDetail) { setUserRentals([]); return; }
+    setUserRentalsLoading(true);
+    api.get<Record<string, unknown>[]>(`/admin/users/${userDetail.id}/rentals`)
+      .then(data => setUserRentals(data))
+      .catch(() => setUserRentals([]))
+      .finally(() => setUserRentalsLoading(false));
+  }, [userDetail?.id]);
 
   // ── نظام التحديثات اللحظية والنشاط الأخير ──
   const [lastUpdate, setLastUpdate] = useState(Date.now());
@@ -983,48 +995,105 @@ export default function AdminPage() {
         </Tabs>
       </div>
 
-      {/* ── نافذة تفاصيل المستخدم ── */}
+      {/* ── نافذة تفاصيل المستخدم الكاملة ── */}
       <Dialog open={!!userDetail} onOpenChange={() => setUserDetail(null)}>
-        <DialogContent className="max-w-[calc(100%-2rem)] md:max-w-md" dir={isRTL ? 'rtl' : 'ltr'}>
+        <DialogContent className="max-w-[calc(100%-2rem)] md:max-w-xl max-h-[90vh] overflow-y-auto" dir={isRTL ? 'rtl' : 'ltr'}>
           <DialogHeader>
-            <DialogTitle>ملف المستخدم — {userDetail?.name}</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <Users size={14} className="text-primary" />
+              </div>
+              ملف المستخدم — {userDetail?.name}
+            </DialogTitle>
           </DialogHeader>
           {userDetail && (
             <div className="space-y-4">
+              {/* المعلومات الأساسية */}
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p className="text-xs text-muted-foreground">الاسم</p>
-                  <p className="font-medium">{userDetail.name}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">الهاتف</p>
-                  <p className="font-medium" dir="ltr">{userDetail.phone}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">الولاية</p>
-                  <p>{userDetail.wilayaName}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">حالة التوثيق</p>
-                  {statusBadge(userDetail.verificationStatus)}
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">حالة الحساب</p>
-                  <AccountStatusBadge status={userDetail.accountStatus} />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">إجمالي التأجيرات</p>
-                  <p>{userDetail.totalRentals}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">الرصيد</p>
-                  <p>{fmt(userDetail.walletBalance)} دج</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">الأرباح</p>
-                  <p>{fmt(userDetail.earningsBalance)} دج</p>
-                </div>
+                <div><p className="text-xs text-muted-foreground">الاسم</p><p className="font-medium">{userDetail.name}</p></div>
+                <div><p className="text-xs text-muted-foreground">الهاتف</p><p className="font-medium" dir="ltr">{userDetail.phone}</p></div>
+                <div><p className="text-xs text-muted-foreground">الولاية</p><p>{userDetail.wilayaName}</p></div>
+                <div><p className="text-xs text-muted-foreground">التوثيق</p>{statusBadge(userDetail.verificationStatus)}</div>
+                <div><p className="text-xs text-muted-foreground">حالة الحساب</p><AccountStatusBadge status={userDetail.accountStatus} /></div>
+                <div><p className="text-xs text-muted-foreground">تاريخ التسجيل</p><p className="text-xs">{new Date(userDetail.createdAt).toLocaleDateString('ar-DZ')}</p></div>
+                <div><p className="text-xs text-muted-foreground">الرصيد</p><p className="font-medium">{fmt(userDetail.walletBalance)} دج</p></div>
+                <div><p className="text-xs text-muted-foreground">الأرباح</p><p className="font-medium">{fmt(userDetail.earningsBalance)} دج</p></div>
+                <div><p className="text-xs text-muted-foreground">إجمالي الإيجارات</p><p>{userDetail.totalRentals}</p></div>
+                {userDetail.email && <div className="col-span-2"><p className="text-xs text-muted-foreground">البريد</p><p className="text-sm" dir="ltr">{userDetail.email}</p></div>}
               </div>
+
+              {/* وثائق KYC */}
+              {(() => {
+                const kyc = kycRequests.find(k => k.userId === userDetail.id);
+                if (!kyc) return null;
+                return (
+                  <>
+                    <Separator />
+                    <div>
+                      <p className="text-sm font-semibold flex items-center gap-1.5 mb-3">
+                        <ShieldCheck size={14} className="text-primary" /> وثائق التوثيق
+                        <Badge className={cn('text-xs', kyc.status === 'approved' ? 'bg-green-500/10 text-green-700 border-green-300' : kyc.status === 'rejected' ? 'bg-destructive/10 text-destructive border-destructive/30' : 'bg-amber-500/10 text-amber-700 border-amber-300')}>
+                          {kyc.status === 'approved' ? 'مقبول' : kyc.status === 'rejected' ? 'مرفوض' : 'قيد المراجعة'}
+                        </Badge>
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[{ label: 'وجه الهوية', uri: kyc.idFrontUri }, { label: 'خلف الهوية', uri: kyc.idBackUri }, { label: 'صورة ذاتية', uri: kyc.selfieUri }].map((item, idx) => (
+                          <div key={idx} className="space-y-1">
+                            <p className="text-xs text-muted-foreground text-center">{item.label}</p>
+                            {item.uri && item.uri !== 'camera_capture' ? (
+                              <a href={item.uri} target="_blank" rel="noopener noreferrer">
+                                <img src={item.uri} alt={item.label} className="w-full h-24 object-cover rounded-lg border border-border bg-muted hover:opacity-80 transition-opacity cursor-pointer" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                              </a>
+                            ) : (
+                              <div className="w-full h-24 rounded-lg border border-border bg-muted flex items-center justify-center text-xs text-muted-foreground">لا توجد صورة</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {kyc.status === 'pending' && (
+                        <div className="flex gap-2 mt-3">
+                          <Button size="sm" className="flex-1 gap-1" onClick={() => { approveKYC(userDetail.id); toast.success('تم قبول التوثيق'); setUserDetail(null); }}>
+                            <CheckCircle size={12} /> قبول التوثيق
+                          </Button>
+                          <Button size="sm" variant="outline" className="flex-1 gap-1 text-destructive border-destructive/30" onClick={() => { setKycRejectUserId(userDetail.id); setKycRejectReason(''); setUserDetail(null); }}>
+                            <XCircle size={12} /> رفض
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+
+              {/* تاريخ الإيجارات */}
+              <Separator />
+              <div>
+                <p className="text-sm font-semibold flex items-center gap-1.5 mb-2">
+                  <Package size={14} className="text-primary" /> تاريخ الإيجارات
+                  {userRentals.length > 0 && <Badge variant="outline" className="text-xs">{userRentals.length}</Badge>}
+                </p>
+                {userRentalsLoading ? (
+                  <p className="text-xs text-muted-foreground text-center py-4">جارٍ التحميل...</p>
+                ) : userRentals.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4">لا توجد إيجارات</p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {userRentals.map((r, i) => (
+                      <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 text-xs">
+                        {r.product_image && <img src={r.product_image as string} alt="" className="w-8 h-8 rounded object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{r.product_title as string}</p>
+                          <p className="text-muted-foreground">{r.duration_days as number} يوم — {((r.total_amount as number) || 0).toLocaleString('ar-DZ')} دج</p>
+                        </div>
+                        <Badge className={cn('text-xs shrink-0', r.status === 'completed' ? 'bg-green-500/10 text-green-700 border-green-300' : r.status === 'active' ? 'bg-blue-500/10 text-blue-700 border-blue-300' : r.status === 'cancelled' ? 'bg-destructive/10 text-destructive border-destructive/30' : 'bg-amber-500/10 text-amber-700 border-amber-300')}>
+                          {r.status === 'completed' ? 'مكتمل' : r.status === 'active' ? 'نشط' : r.status === 'cancelled' ? 'ملغى' : 'معلق'}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <Separator />
               <div className={cn('flex gap-2', isRTL ? 'flex-row-reverse' : '')}>
                 {userDetail.accountStatus === 'active' ? (

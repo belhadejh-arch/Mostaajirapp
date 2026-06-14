@@ -18,8 +18,10 @@ router.get('/', requireAuth, async (req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
   const d = req.body;
+  const client = await pool.connect();
   try {
-    const { rows: [row] } = await pool.query(`
+    await client.query('BEGIN');
+    const { rows: [row] } = await client.query(`
       INSERT INTO rentals (
         id, product_id, product_title, product_image,
         owner_id, owner_name, renter_id, renter_name, renter_phone,
@@ -37,15 +39,28 @@ router.post('/', requireAuth, async (req, res) => {
         d.total_amount || 0, d.handover_token, d.return_token,
       ]
     );
-    await pool.query(
+    await client.query(
       `UPDATE products SET available_quantity=GREATEST(0, available_quantity-1),
        status=CASE WHEN available_quantity-1<=0 THEN 'rented' ELSE 'available' END WHERE id=$1`,
       [d.product_id]
     );
+    /* ── إشعار فوري للمؤجر بوصول طلب استئجار جديد ── */
+    await client.query(
+      `INSERT INTO notifications (user_id, title, body, type) VALUES ($1, $2, $3, 'rental')`,
+      [
+        d.owner_id,
+        '📦 طلب استئجار جديد!',
+        `${d.renter_name} يطلب استئجار "${d.product_title}" لمدة ${d.duration_days} يوم — قيمة الطلب: ${(d.total_amount || 0).toLocaleString('ar-DZ')} دج`,
+      ]
+    );
+    await client.query('COMMIT');
     res.json(row);
   } catch (e) {
+    await client.query('ROLLBACK');
     console.error(e);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 

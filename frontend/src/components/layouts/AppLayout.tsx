@@ -58,9 +58,9 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
       {/* الشعار الرسمي */}
       <div className="px-4 mb-6 flex items-center justify-center">
         <img
-          src="https://miaoda-conversation-file.s3cdn.medo.dev/user-c8wxjlfz0sn4/app-c8wxvvf3rb41/20260612/IMG_0310.png"
+          src="/logo.png"
           alt="MOSTAAJIR"
-          className="h-10 w-auto object-contain"
+          className="h-12 w-auto object-contain"
         />
       </div>
 
@@ -175,9 +175,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-2">
             <img
-              src="https://miaoda-conversation-file.s3cdn.medo.dev/user-c8wxjlfz0sn4/app-c8wxvvf3rb41/20260612/IMG_0310.png"
+              src="/logo.png"
               alt="MOSTAAJIR"
-              className="h-8 w-auto object-contain"
+              className="h-9 w-auto object-contain"
             />
           </div>
 

@@ -1,0 +1,3 @@
+- [MOSTAJIR stack & DB](mostajir-stack.md) — React/Vite:5000 + Express:3001 + Neon PostgreSQL via NEON_DB_URL
+- [Notification pattern](mostajir-notifications.md) — All notifications use INSERT into notifications table server-side, never via frontend API calls
+- [Product review flow](mostajir-product-review.md) — Products insert with review_status='pending'; admin approves to make public; DataContext filters client-side

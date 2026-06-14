@@ -62,16 +62,38 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (req.body[k] !== undefined) updates[k] = req.body[k];
   }
   if (Object.keys(updates).length === 0) return res.json({ ok: true });
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
     const keys = Object.keys(updates);
     const vals = Object.values(updates);
     const set = keys.map((k, i) => `${k}=$${i + 2}`).join(',');
-    await pool.query(`UPDATE products SET ${set} WHERE id=$1`, [req.params.id, ...vals]);
-    const { rows: [row] } = await pool.query(`SELECT * FROM products WHERE id=$1`, [req.params.id]);
+    await client.query(`UPDATE products SET ${set} WHERE id=$1`, [req.params.id, ...vals]);
+    const { rows: [row] } = await client.query(`SELECT * FROM products WHERE id=$1`, [req.params.id]);
+
+    /* إشعار المالك عند قبول أو رفض المنتج */
+    if (updates.review_status && row) {
+      if (updates.review_status === 'approved') {
+        await client.query(
+          `INSERT INTO notifications (user_id, title, body, type) VALUES ($1,$2,$3,'product')`,
+          [row.owner_id, '✅ تم نشر منتجك!', `تمت مراجعة منتجك "${row.title}" وتم قبوله ونشره على موستأجر. يمكن للمستأجرين الآن استئجاره.`]
+        );
+      } else if (updates.review_status === 'rejected') {
+        await client.query(
+          `INSERT INTO notifications (user_id, title, body, type) VALUES ($1,$2,$3,'product')`,
+          [row.owner_id, '❌ تم رفض منتجك', `تعذّر نشر منتجك "${row.title}". السبب: ${updates.rejection_reason || 'لم يُحدد سبب'}. يمكنك تعديله وإعادة رفعه.`]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
     res.json(row);
   } catch (e) {
+    await client.query('ROLLBACK');
     console.error(e);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 
