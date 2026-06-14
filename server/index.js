@@ -5,16 +5,35 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
-  : ['http://localhost:5000', 'http://localhost:5173'];
+const ALLOWED_ORIGINS = [
+  // Vercel production & preview
+  'https://mostajirapp.vercel.app',
+  'https://mostajir.vercel.app',
+  // local dev
+  'http://localhost:5000',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  // extra origins from env (comma-separated)
+  ...(process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+    : []),
+];
 
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin || ALLOWED_ORIGINS.some(o => origin.startsWith(o))) return cb(null, true);
-    cb(null, true); // permissive in dev; tighten for prod
+    // allow server-to-server (no origin) or any vercel preview subdomain
+    if (
+      !origin ||
+      ALLOWED_ORIGINS.includes(origin) ||
+      /^https:\/\/mostajir.*\.vercel\.app$/.test(origin)
+    ) {
+      return cb(null, true);
+    }
+    cb(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 app.use(express.json({ limit: '20mb' }));
