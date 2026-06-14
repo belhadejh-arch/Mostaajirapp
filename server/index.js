@@ -6,7 +6,10 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 const ALLOWED_ORIGINS = [
-  // Vercel production & preview
+  // Vercel production & preview (double-a: mostaajir)
+  'https://mostaajirapp.vercel.app',
+  'https://mostaajir.vercel.app',
+  // Vercel production & preview (single-a fallback: mostajir)
   'https://mostajirapp.vercel.app',
   'https://mostajir.vercel.app',
   // local dev
@@ -21,10 +24,11 @@ const ALLOWED_ORIGINS = [
 
 app.use(cors({
   origin: (origin, cb) => {
-    // allow server-to-server (no origin) or any vercel preview subdomain
+    // allow server-to-server (no origin) or any mostaajir/mostajir vercel preview
     if (
       !origin ||
       ALLOWED_ORIGINS.includes(origin) ||
+      /^https:\/\/mostaajir.*\.vercel\.app$/.test(origin) ||
       /^https:\/\/mostajir.*\.vercel\.app$/.test(origin)
     ) {
       return cb(null, true);
