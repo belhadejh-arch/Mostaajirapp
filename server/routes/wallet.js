@@ -72,7 +72,13 @@ router.post('/checkout', requireAuth, async (req, res) => {
     );
 
     console.log('[Chargily] SUCCESS — checkout_url:', data.checkout_url);
-    res.json({ checkout_url: data.checkout_url, checkoutId: data.id });
+    res.json({
+      success: true,
+      checkout_url: data.checkout_url,
+      checkoutUrl: data.checkout_url,
+      url: data.checkout_url,
+      checkoutId: data.id,
+    });
 
   } catch (error) {
     const status = error.response?.status || 500;
