@@ -25,15 +25,19 @@ router.post('/checkout', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'المبلغ غير صالح (الحد الأدنى 100 دج)' });
   }
 
-  // --- 2. قراءة المفتاح من env أولاً، ثم fallback للمفتاح الثابت ---
-  const secretKey = process.env.CHARGILY_SECRET_KEY
-    || 'live_sk_DbJMghBN6ql75nN3C3QNRfk2Rrfy2nBdcoo2EqcT';
+  // --- 2. قراءة المفتاح: يجب أن يكون secret key (يبدأ بـ live_sk_ أو test_sk_) ---
+  const envKey = process.env.CHARGILY_SECRET_KEY || '';
+  const isValidSecretKey = envKey.startsWith('live_sk_') || envKey.startsWith('test_sk_');
+  const secretKey = isValidSecretKey
+    ? envKey
+    : 'live_sk_DbJMghBN6ql75nN3C3QNRfk2Rrfy2nBdcoo2EqcT';
 
   // --- 3. Logs للتشخيص ---
   console.log('=== [Chargily Checkout] ===');
-  console.log('  SECRET_KEY source :', process.env.CHARGILY_SECRET_KEY ? 'env' : 'fallback');
-  console.log('  SECRET_KEY exists :', !!secretKey);
-  console.log('  KEY prefix        :', secretKey.substring(0, 12) + '...');
+  console.log('  ENV key value     :', envKey ? envKey.substring(0, 15) + '...' : '(empty)');
+  console.log('  ENV key type      :', envKey.startsWith('live_sk_') ? '✅ secret' : envKey.startsWith('live_pk_') ? '❌ PUBLIC (wrong!)' : envKey.startsWith('test_sk_') ? '✅ test-secret' : '❓ unknown');
+  console.log('  Using key source  :', isValidSecretKey ? 'env variable' : '⚠️ hardcoded fallback');
+  console.log('  Active key prefix :', secretKey.substring(0, 15) + '...');
   console.log('  amount            :', amountInt);
   console.log('  userId            :', userId);
   console.log('  returnUrl         :', returnUrl);

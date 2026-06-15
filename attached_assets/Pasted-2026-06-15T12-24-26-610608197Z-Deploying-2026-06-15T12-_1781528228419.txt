@@ -1,0 +1,50 @@
+2026-06-15T12:24:26.610608197Z ==> Deploying...
+2026-06-15T12:24:26.934541837Z ==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
+2026-06-15T12:24:37.532199975Z ==> Your service is live 🎉
+2026-06-15T12:24:37.731664125Z ==> 
+2026-06-15T12:24:37.737128514Z ==> ///////////////////////////////////////////////////////////
+2026-06-15T12:24:37.747171106Z ==> 
+2026-06-15T12:24:37.750788689Z ==> Available at your primary URL https://mostaajirapp-backend.onrender.com
+2026-06-15T12:24:37.755130886Z ==> 
+2026-06-15T12:24:37.76027464Z ==> ///////////////////////////////////////////////////////////
+2026-06-15T12:26:39.551074281Z 
+2026-06-15T12:26:39.551078402Z To prepare for this change:
+2026-06-15T12:26:39.551081902Z - If you want the current behavior, explicitly use 'sslmode=verify-full'
+2026-06-15T12:26:39.551085312Z - If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+2026-06-15T12:26:39.551088332Z 
+2026-06-15T12:26:39.551091922Z See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+2026-06-15T12:26:39.551095062Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-06-15T12:28:34.664069437Z API Key exists: true
+2026-06-15T12:28:34.664105678Z [Chargily] POST payload: {"amount":2000,"currency":"dzd","success_url":"https://mostaajirapp-orpin.vercel.app/wallet?status=success&amount=2000","back_url":"https://mostaajirapp-orpin.vercel.app/wallet?status=cancel"}
+2026-06-15T12:28:35.182366298Z [Chargily] Response status: 401 | body: {"message":"Unauthenticated."}
+2026-06-15T12:29:42.865928367Z ==> Detected service running on port 10000
+2026-06-15T12:29:42.965375867Z ==> Docs on specifying a port: https://render.com/docs/web-services#port-binding
+2026-06-15T12:37:16.904004413Z API Key exists: true
+2026-06-15T12:37:16.904205537Z [Chargily] POST payload: {"amount":2000,"currency":"dzd","success_url":"https://mostaajirapp-orpin.vercel.app/wallet?status=success&amount=2000","back_url":"https://mostaajirapp-orpin.vercel.app/wallet?status=cancel"}
+2026-06-15T12:37:17.354365605Z [Chargily] Response status: 401 | body: {"message":"Unauthenticated."}
+2026-06-15T12:45:02.991447506Z API Key exists: true
+2026-06-15T12:45:02.991496577Z [Chargily] POST payload: {"amount":2000,"currency":"dzd","success_url":"https://mostaajirapp-orpin.vercel.app/wallet?status=success&amount=2000","back_url":"https://mostaajirapp-orpin.vercel.app/wallet?status=cancel"}
+2026-06-15T12:45:03.615133074Z [Chargily] Response status: 401 | body: {"message":"Unauthenticated."}
+2026-06-15T12:54:28.058622008Z ==> Deploying...
+2026-06-15T12:54:28.147109655Z ==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
+2026-06-15T12:54:52.384281398Z ==> Running 'node index.js'
+2026-06-15T12:54:54.683320604Z MOSTAJIR API running on port 10000
+2026-06-15T12:54:59.535916093Z ==> Your service is live 🎉
+2026-06-15T12:54:59.714077624Z ==> 
+2026-06-15T12:54:59.717011639Z ==> ///////////////////////////////////////////////////////////
+2026-06-15T12:54:59.720151443Z ==> 
+2026-06-15T12:54:59.722522277Z ==> Available at your primary URL https://mostaajirapp-backend.onrender.com
+2026-06-15T12:54:59.725862318Z ==> 
+2026-06-15T12:54:59.728610337Z ==> ///////////////////////////////////////////////////////////
+2026-06-15T12:55:12.811105224Z (node:73) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'.
+2026-06-15T12:55:12.811130395Z In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.
+2026-06-15T12:55:12.811135664Z 
+2026-06-15T12:55:12.811141345Z To prepare for this change:
+2026-06-15T12:55:12.811146765Z - If you want the current behavior, explicitly use 'sslmode=verify-full'
+2026-06-15T12:55:12.811151625Z - If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+2026-06-15T12:55:12.811156395Z 
+2026-06-15T12:55:12.811161635Z See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+2026-06-15T12:55:12.811166336Z (Use `node --trace-warnings ...` to show where the warning was created)
+2026-06-15T12:56:34.797531384Z API Key exists: true
+2026-06-15T12:56:34.797581215Z [Chargily] POST payload: {"amount":2000,"currency":"dzd","success_url":"https://mostaajirapp-orpin.vercel.app/wallet?status=success&amount=2000","back_url":"https://mostaajirapp-orpin.vercel.app/wallet?status=cancel"}
+2026-06-15T12:56:35.273594416Z [Chargily] Response status: 401 | body: {"message":"Unauthenticated."}
