@@ -23,6 +23,7 @@ router.post('/checkout', requireAuth, async (req, res) => {
   if (!amountInt || amountInt < 100) return res.status(400).json({ error: 'Invalid amount (min 100 DZD)' });
 
   const secretKey = process.env.CHARGILY_SECRET_KEY;
+  console.log("API Key exists:", !!secretKey);
   if (!secretKey) return res.status(500).json({ error: 'Payment gateway not configured' });
 
   try {
