@@ -57,6 +57,17 @@ app.use('/api/pdf',           require('./routes/pdf'));
 
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
+/* ── Serve built frontend (production) ── */
+const DIST = path.join(__dirname, '..', 'frontend', 'dist');
+const fs = require('fs');
+if (fs.existsSync(DIST)) {
+  app.use(express.static(DIST));
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) return res.status(404).json({ error: 'Not found' });
+    res.sendFile(path.join(DIST, 'index.html'));
+  });
+}
+
 /* ── Internal cron: runs every 10 minutes ── */
 const CRON_SECRET = process.env.CRON_SECRET || 'mostajir_cron';
 setInterval(async () => {

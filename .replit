@@ -103,3 +103,8 @@ externalPort = 8080
 [userenv.shared]
 
 [userenv.development]
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["node", "server/index.js"]
+build = ["bash", "-c", "cd frontend && npm install -g pnpm && pnpm install && pnpm build"]
