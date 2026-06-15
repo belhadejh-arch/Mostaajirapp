@@ -13,7 +13,7 @@ router.post('/register', async (req, res) => {
       [email.toLowerCase().trim(), hash]
     );
     await pool.query(
-      `INSERT INTO profiles (id, name, phone, wilaya_code, wilaya_name) VALUES ($1,$2,$3,$4,$5)`,
+      `INSERT INTO profiles (id, name, phone, wilaya_code, wilaya_name, terms_accepted_at) VALUES ($1,$2,$3,$4,$5, NOW())`,
       [user.id, name || '', phone || '', wilayaCode || 16, wilayaName || 'الجزائر']
     );
     const { rows: [profile] } = await pool.query(`SELECT * FROM profiles WHERE id=$1`, [user.id]);

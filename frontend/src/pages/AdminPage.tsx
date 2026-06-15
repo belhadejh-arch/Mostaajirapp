@@ -1241,6 +1241,23 @@ export default function AdminPage() {
                 <div><p className="text-xs text-muted-foreground">التوثيق</p>{statusBadge(userDetail.verificationStatus)}</div>
                 <div><p className="text-xs text-muted-foreground">حالة الحساب</p><AccountStatusBadge status={userDetail.accountStatus} /></div>
                 <div><p className="text-xs text-muted-foreground">تاريخ التسجيل</p><p className="text-xs">{new Date(userDetail.createdAt).toLocaleDateString('ar-DZ')}</p></div>
+                <div className="col-span-2">
+                  <p className="text-xs text-muted-foreground mb-1">قبول شروط الاستخدام</p>
+                  {userDetail.termsAcceptedAt ? (
+                    <div className="flex items-center gap-2">
+                      <Badge className="gap-1 bg-green-500/10 text-green-700 border-green-300 text-xs" variant="outline">
+                        <CheckCircle size={11} /> مقبولة
+                      </Badge>
+                      <span className="text-xs text-muted-foreground" dir="ltr">
+                        {new Date(userDetail.termsAcceptedAt).toLocaleString('ar-DZ', { dateStyle: 'medium', timeStyle: 'short' })}
+                      </span>
+                    </div>
+                  ) : (
+                    <Badge className="gap-1 bg-amber-500/10 text-amber-700 border-amber-300 text-xs" variant="outline">
+                      <AlertTriangle size={11} /> لم يقبل بعد
+                    </Badge>
+                  )}
+                </div>
                 <div><p className="text-xs text-muted-foreground">الرصيد</p><p className="font-medium">{fmt(userDetail.walletBalance)} دج</p></div>
                 <div><p className="text-xs text-muted-foreground">الأرباح</p><p className="font-medium">{fmt(userDetail.earningsBalance)} دج</p></div>
                 <div><p className="text-xs text-muted-foreground">إجمالي الإيجارات</p><p>{userDetail.totalRentals}</p></div>

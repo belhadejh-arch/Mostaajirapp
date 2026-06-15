@@ -3,7 +3,7 @@ import { api } from '@/api/client';
 import type { User, WithdrawalRequest, AdminSettings, Dispute, DisputeStatus, KycRequest } from '@/types';
 import { useAuth } from './AuthContext';
 
-export interface AdminUser extends User { createdAt: string; isActive: boolean; email: string; }
+export interface AdminUser extends User { createdAt: string; isActive: boolean; email: string; termsAcceptedAt?: string; }
 
 const DEFAULT_LOGO = 'https://miaoda-conversation-file.s3cdn.medo.dev/user-c8wxjlfz0sn4/app-c8wxvvf3rb41/20260611/IMG_0277.jpeg';
 
@@ -31,6 +31,7 @@ function rowToAdminUser(row: Record<string, unknown>, email = ''): AdminUser {
     kycRejectionReason: row.kyc_rejection_reason as string | undefined,
     createdAt: (row.created_at as string) || new Date().toISOString(),
     isActive: (row.account_status as string) === 'active',
+    termsAcceptedAt: row.terms_accepted_at as string | undefined,
   };
 }
 
