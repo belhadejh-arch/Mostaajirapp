@@ -74,7 +74,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(token);
       setUser(rowToUser(userData));
       return true;
-    } catch {
+    } catch (err: unknown) {
+      const msg = (err as Error).message || 'فشل تسجيل الدخول';
+      alert('❌ خطأ في تسجيل الدخول: ' + msg);
       return false;
     }
   }, []);
@@ -94,7 +96,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(token);
       setUser(rowToUser(userData));
       return true;
-    } catch {
+    } catch (err: unknown) {
+      const msg = (err as Error).message || 'فشل إنشاء الحساب';
+      alert('❌ خطأ في التسجيل: ' + msg);
       return false;
     }
   }, []);

@@ -3,7 +3,7 @@ export const translations = {
     // Nav
     home: 'الرئيسية', explore: 'استكشاف', addProduct: 'إضافة منتج',
     rentals: 'التأجيرات', profile: 'الملف الشخصي', wallet: 'المحفظة',
-    admin: 'الإدارة', logout: 'تسجيل الخروج', login: 'تسجيل الدخول v2',
+    admin: 'الإدارة', logout: 'تسجيل الخروج', login: 'تسجيل الدخول',
     register: 'إنشاء حساب', verification: 'التحقق من الهوية',
     // Common
     search: 'بحث', cancel: 'إلغاء', confirm: 'تأكيد', save: 'حفظ',
