@@ -131,12 +131,12 @@ export default function VerificationPage() {
     if (!user) return;
     setSubmitting(true);
     try {
-      await api.post('/upload/kyc', {
+      await api.post('/api/upload/kyc', {
         id_front: captures.front,
         id_back: captures.back,
         selfie: captures.selfie,
       });
-      await api.post('/admin/kyc-submit', {
+      await api.post('/api/admin/kyc-submit', {
         user_id: user.id,
         user_name: user.name,
         user_email: (user as unknown as { email?: string }).email || '',

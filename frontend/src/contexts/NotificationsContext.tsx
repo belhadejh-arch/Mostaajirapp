@@ -35,7 +35,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const fetchNotifications = useCallback(async () => {
     if (!getToken()) return;
     try {
-      const data = await api.get<Record<string, unknown>[]>('/notifications');
+      const data = await api.get<Record<string, unknown>[]>('/api/notifications');
       setNotifications(prev => {
         const newNotifs = data.map(rowToNotif);
         const newUnread = newNotifs.filter(n => !n.read).length;
@@ -62,16 +62,16 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
 
   const markAsRead = useCallback(async (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
-    try { await api.put(`/notifications/${id}/read`); } catch { /* silent */ }
+    try { await api.put(`/api/notifications/${id}/read`); } catch { /* silent */ }
   }, []);
 
   const markAllAsRead = useCallback(async () => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-    try { await api.put('/notifications/read-all'); } catch { /* silent */ }
+    try { await api.put('/api/notifications/read-all'); } catch { /* silent */ }
   }, []);
 
   const sendNotification = useCallback(async (userId: string, title: string, body: string, type: Notification['type'] = 'general') => {
-    try { await api.post('/notifications', { userId, title, body, type }); } catch { /* silent */ }
+    try { await api.post('/api/notifications', { userId, title, body, type }); } catch { /* silent */ }
   }, []);
 
   const unreadCount = notifications.filter(n => !n.read).length;

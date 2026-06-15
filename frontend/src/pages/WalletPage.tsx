@@ -49,7 +49,7 @@ export default function WalletPage() {
   const fetchTransactions = async () => {
     if (!user) return;
     try {
-      const data = await api.get<TxRow[]>('/wallet/transactions');
+      const data = await api.get<TxRow[]>('/api/wallet/transactions');
       setTopUpTx(data);
     } catch {}
   };
@@ -78,14 +78,14 @@ export default function WalletPage() {
       // تحديث فوري بعد ثانية، ثم مرة أخرى بعد 5 ثوانٍ للتأكد من استلام الـ webhook
       const refresh = () => {
         if (!user) return;
-        api.get<Record<string, unknown>>('/auth/me')
+        api.get<Record<string, unknown>>('/api/auth/me')
           .then(data => {
             if (data?.wallet_balance !== undefined) {
               updateUser({ walletBalance: data.wallet_balance as number });
             }
           })
           .catch(() => {});
-        api.get<TxRow[]>('/wallet/transactions')
+        api.get<TxRow[]>('/api/wallet/transactions')
           .then(data => setTopUpTx(data))
           .catch(() => {});
       };
@@ -134,7 +134,7 @@ export default function WalletPage() {
     try {
       const returnUrl = `${window.location.origin}/wallet?status=success&amount=${selectedAmount}`;
       const cancelUrl = `${window.location.origin}/wallet?status=cancel`;
-      const data = await api.post<{ checkoutUrl: string }>('/wallet/checkout', {
+      const data = await api.post<{ checkoutUrl: string }>('/api/wallet/checkout', {
         amount: selectedAmount,
         userId: user.id,
         userEmail: (user as unknown as { email?: string }).email || '',
@@ -163,7 +163,7 @@ export default function WalletPage() {
     if (amt > user.earningsBalance) { toast.error(t('insufficientEarnings')); return; }
     setLoading(true);
     try {
-      await api.post('/wallet/withdraw', {
+      await api.post('/api/wallet/withdraw', {
         userName: withdrawName.trim(),
         phone: withdrawPhone.trim(),
         ccpNumber: ccpNumber.trim(),

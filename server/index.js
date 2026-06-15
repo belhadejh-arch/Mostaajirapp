@@ -40,7 +40,6 @@ app.use(cors({
 
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
-
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/api/auth',          require('./routes/auth'));
@@ -53,8 +52,39 @@ app.use('/api/upload',        require('./routes/upload'));
 app.use('/api/messages',      require('./routes/messages'));
 app.use('/api/disputes',      require('./routes/disputes'));
 app.use('/api/ratings',       require('./routes/ratings'));
+app.use('/api/ledger',        require('./routes/ledger'));
+app.use('/api/pdf',           require('./routes/pdf'));
 
 app.get('/api/health', (_, res) => res.json({ ok: true }));
+
+/* ── Internal cron: runs every 10 minutes ── */
+const CRON_SECRET = process.env.CRON_SECRET || 'mostajir_cron';
+setInterval(async () => {
+  try {
+    const http = require('http');
+    const options = {
+      hostname: 'localhost',
+      port: PORT,
+      path: '/api/rentals/cron/auto-late',
+      method: 'POST',
+      headers: { 'x-cron-secret': CRON_SECRET, 'Content-Type': 'application/json' },
+    };
+    const req = http.request(options, res => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(data);
+          if (result.lateMarked > 0 || result.depositsReleased > 0) {
+            console.log(`[Cron] Late marked: ${result.lateMarked}, Deposits released: ${result.depositsReleased}`);
+          }
+        } catch {}
+      });
+    });
+    req.on('error', () => {});
+    req.end();
+  } catch {}
+}, 10 * 60 * 1000);
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`MOSTAJIR API running on port ${PORT}`);

@@ -99,11 +99,11 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     async function loadAll() {
       try {
         const [usersData, kycData, wrData, disputesData, settingsData] = await Promise.all([
-          api.get<Record<string, unknown>[]>('/admin/users').catch(() => []),
-          api.get<Record<string, unknown>[]>('/admin/kyc').catch(() => []),
-          api.get<Record<string, unknown>[]>('/admin/withdrawals').catch(() => []),
-          api.get<Record<string, unknown>[]>('/disputes').catch(() => []),
-          api.get<AdminSettings>('/admin/settings').catch(() => DEFAULT_SETTINGS),
+          api.get<Record<string, unknown>[]>('/api/admin/users').catch(() => []),
+          api.get<Record<string, unknown>[]>('/api/admin/kyc').catch(() => []),
+          api.get<Record<string, unknown>[]>('/api/admin/withdrawals').catch(() => []),
+          api.get<Record<string, unknown>[]>('/api/disputes').catch(() => []),
+          api.get<Record<string, unknown>[]>('/api/admin/settings').catch(() => DEFAULT_SETTINGS),
         ]);
         setUsers(usersData.map(r => rowToAdminUser(r)));
         setKycRequests(kycData.map(rowToKycRequest));
@@ -116,37 +116,37 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   }, [user?.isAdmin]);
 
   const approveKYC = useCallback(async (userId: string) => {
-    await api.put(`/admin/kyc/${userId}/approve`);
+    await api.put(`/api/admin/kyc/${userId}/approve`);
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, verificationStatus: 'verified' } : u));
     setKycRequests(prev => prev.map(k => k.userId === userId ? { ...k, status: 'approved' } : k));
   }, []);
 
   const rejectKYC = useCallback(async (userId: string, reason: string) => {
-    await api.put(`/admin/kyc/${userId}/reject`, { reason });
+    await api.put(`/api/admin/kyc/${userId}/reject`, { reason });
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, verificationStatus: 'rejected', kycRejectionReason: reason } : u));
     setKycRequests(prev => prev.map(k => k.userId === userId ? { ...k, status: 'rejected', rejectionReason: reason } : k));
   }, []);
 
   const processWithdrawal = useCallback(async (id: string) => {
-    await api.put(`/admin/withdrawals/${id}/process`);
+    await api.put(`/api/admin/withdrawals/${id}/process`);
     setWithdrawals(prev => prev.map(w => w.id === id ? { ...w, status: 'processed' } : w));
   }, []);
 
   const rejectWithdrawal = useCallback(async (id: string) => {
-    await api.put(`/admin/withdrawals/${id}/reject`);
+    await api.put(`/api/admin/withdrawals/${id}/reject`);
     setWithdrawals(prev => prev.map(w => w.id === id ? { ...w, status: 'rejected' } : w));
   }, []);
 
   const updateSettings = useCallback(async (s: Partial<AdminSettings>) => {
     const next = { ...settings, ...s };
     setSettings(next);
-    try { await api.put('/admin/settings', next); } catch { /* silent */ }
+    try { await api.put('/api/admin/settings', next); } catch { /* silent */ }
   }, [settings]);
 
   const updateLogoUrl = useCallback((url: string) => updateSettings({ logoUrl: url }), [updateSettings]);
 
   const updateAccountStatus = async (userId: string, status: string, isActive: boolean) => {
-    await api.put(`/admin/users/${userId}/status`, { account_status: status });
+    await api.put(`/api/admin/users/${userId}/status`, { account_status: status });
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, accountStatus: status as AdminUser['accountStatus'], isActive } : u));
   };
 
@@ -161,23 +161,23 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     users.filter(u => u.phone.replace(/\s/g,'').includes(phone.replace(/\s/g,''))), [users]);
 
   const clearTestAccounts = useCallback(async () => {
-    await api.delete('/admin/users/test');
-    const data = await api.get<Record<string, unknown>[]>('/admin/users');
+    await api.delete('/api/admin/users/test');
+    const data = await api.get<Record<string, unknown>[]>('/api/admin/users');
     setUsers(data.map(r => rowToAdminUser(r)));
   }, []);
 
   const resolveDispute = useCallback(async (id: string, adminNotes?: string) => {
-    await api.put(`/disputes/${id}`, { status: 'resolved', admin_notes: adminNotes });
+    await api.put(`/api/disputes/${id}`, { status: 'resolved', admin_notes: adminNotes });
     setDisputes(prev => prev.map(d => d.id === id ? { ...d, status: 'resolved' as DisputeStatus, adminNotes, resolvedAt: new Date().toISOString() } : d));
   }, []);
 
   const rejectDispute = useCallback(async (id: string, adminNotes?: string) => {
-    await api.put(`/disputes/${id}`, { status: 'rejected', admin_notes: adminNotes });
+    await api.put(`/api/disputes/${id}`, { status: 'rejected', admin_notes: adminNotes });
     setDisputes(prev => prev.map(d => d.id === id ? { ...d, status: 'rejected' as DisputeStatus, adminNotes, resolvedAt: new Date().toISOString() } : d));
   }, []);
 
   const reviewDispute = useCallback(async (id: string) => {
-    await api.put(`/disputes/${id}`, { status: 'under_review' });
+    await api.put(`/api/disputes/${id}`, { status: 'under_review' });
     setDisputes(prev => prev.map(d => d.id === id ? { ...d, status: 'under_review' as DisputeStatus } : d));
   }, []);
 

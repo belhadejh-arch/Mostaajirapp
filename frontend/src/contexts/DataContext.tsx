@@ -88,6 +88,7 @@ function rowToProduct(row: Record<string, unknown>): Product {
 }
 
 function rowToRental(row: Record<string, unknown>): Rental {
+  const durationHours = (row.duration_hours as number) || ((row.duration_days as number) || 1) * 24;
   return {
     id: row.id as string,
     productId: (row.product_id as string) || '',
@@ -101,21 +102,30 @@ function rowToRental(row: Record<string, unknown>): Rental {
     renterAddress: (row.renter_address as string) || '',
     renterWilaya: (row.renter_wilaya as string) || '',
     selfPickup: (row.self_pickup as boolean) || false,
-    startTime: row.start_time as string | undefined,
-    endTime: row.end_time as string | undefined,
-    durationDays: (row.duration_days as number) || 1,
+    startTime: (row.start_time as string) || (row.started_at as string) || undefined,
+    endTime: (row.end_time as string) || (row.actual_end_at as string) || undefined,
+    durationHours,
+    durationDays: (row.duration_days as number) || Math.ceil(durationHours / 24),
     dailyRate: (row.daily_rate as number) || 0,
-    deposit: (row.deposit as number) || 0,
+    rentalFee: (row.rental_fee as number) || (row.total_amount as number) || 0,
+    platformFee: (row.platform_fee as number) || (row.commission_amount as number) || 0,
+    depositAmount: (row.deposit_amount as number) || (row.deposit as number) || 0,
+    deposit: (row.deposit as number) || (row.deposit_amount as number) || 0,
     commissionAmount: (row.commission_amount as number) || 0,
     netEarnings: (row.net_earnings as number) || 0,
     totalAmount: (row.total_amount as number) || 0,
     escrowAmount: (row.escrow_amount as number) || 0,
     latePenalty: (row.late_penalty as number) || 0,
     status: (row.status as RentalStatus) || 'pending_owner',
-    qrCodeDelivery: (row.qr_code_delivery as string) || '',
-    qrCodeReturn: (row.qr_code_return as string) || '',
+    pickupQrCode: (row.pickup_qr_code as string) || '',
+    returnQrCode: (row.return_qr_code as string) || '',
+    qrCodeDelivery: (row.pickup_qr_code as string) || (row.qr_code_delivery as string) || '',
+    qrCodeReturn: (row.return_qr_code as string) || (row.qr_code_return as string) || '',
     handoverToken: (row.handover_token as string) || undefined,
     returnToken: (row.return_token as string) || undefined,
+    startedAt: (row.started_at as string) || undefined,
+    expectedEndAt: (row.expected_end_at as string) || undefined,
+    actualEndAt: (row.actual_end_at as string) || undefined,
     extensionRequested: (row.extension_requested as boolean) || false,
     extensionDays: row.extension_days as number | undefined,
     createdAt: (row.created_at as string) || new Date().toISOString(),
@@ -131,8 +141,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const loadData = useCallback(async () => {
     try {
       const [pData, rData] = await Promise.all([
-        api.get<Record<string, unknown>[]>('/products'),
-        api.get<Record<string, unknown>[]>('/rentals').catch(() => [] as Record<string, unknown>[]),
+        api.get<Record<string, unknown>[]>('/api/products'),
+        api.get<Record<string, unknown>[]>('/api/rentals').catch(() => [] as Record<string, unknown>[]),
       ]);
       setProducts(pData.map(rowToProduct));
       setRentals(rData.map(rowToRental));
@@ -165,7 +175,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const addProduct = useCallback(async (data: Omit<Product, 'id' | 'totalRentals' | 'rating' | 'reviewCount' | 'ownerRating' | 'ownerReviewCount' | 'ownerTotalRentals' | 'createdAt'>) => {
-    const row = await api.post<Record<string, unknown>>('/products', {
+    const row = await api.post<Record<string, unknown>>('/api/products', {
       owner_id: data.ownerId, owner_name: data.ownerName, owner_avatar_uri: data.ownerAvatarUri || null,
       owner_phone: data.ownerPhone || null, owner_address: data.ownerAddress || null,
       owner_wilaya_code: data.ownerWilayaCode || null, owner_wilaya_name: data.ownerWilayaName || null,
@@ -191,53 +201,47 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (updates.rejectionReason !== undefined) body.rejection_reason = updates.rejectionReason;
     if (updates.status !== undefined) body.status = updates.status;
     if (updates.availableQuantity !== undefined) body.available_quantity = updates.availableQuantity;
-    if (Object.keys(body).length > 0) await api.put(`/products/${productId}`, body);
+    if (Object.keys(body).length > 0) await api.put(`/api/products/${productId}`, body);
     setProducts(prev => prev.map(p => p.id === productId ? { ...p, ...updates } : p));
   }, []);
 
   const toggleHideProduct = useCallback(async (productId: string) => {
     const prod = products.find(p => p.id === productId);
     if (!prod) return;
-    await api.put(`/products/${productId}`, { is_hidden: !prod.isHidden });
+    await api.put(`/api/products/${productId}`, { is_hidden: !prod.isHidden });
     setProducts(prev => prev.map(p => p.id === productId ? { ...p, isHidden: !p.isHidden } : p));
   }, [products]);
 
   const deleteProduct = useCallback(async (productId: string) => {
-    await api.delete(`/products/${productId}`);
+    await api.delete(`/api/products/${productId}`);
     setProducts(prev => prev.filter(p => p.id !== productId));
   }, []);
 
-  const createRental = useCallback(async (params: { productId: string; durationDays: number; renterId: string; renterName: string; renterPhone: string; renterAddress: string; renterWilaya: string; selfPickup: boolean; }): Promise<string> => {
+  const createRental = useCallback(async (params: { productId: string; durationHours?: number; durationDays?: number; renterId: string; renterName: string; renterPhone: string; renterAddress: string; renterWilaya: string; selfPickup: boolean; }): Promise<string> => {
     const product = products.find(p => p.id === params.productId);
     if (!product) return '';
-    const { gross, commission, net } = calcCommission(product.rentalPrice, params.durationDays, product.commissionRate);
-    const totalAmount = gross + product.deposit;
-    const rentalId = crypto.randomUUID();
-    const handoverToken = crypto.randomUUID();
-    const returnToken = crypto.randomUUID();
+    const durationHours = params.durationHours || (params.durationDays || 1) * 24;
     try {
-      const row = await api.post<Record<string, unknown>>('/rentals', {
-        id: rentalId, product_id: product.id, product_title: product.title,
-        product_image: product.images[0] || null,
-        owner_id: product.ownerId, owner_name: product.ownerName,
+      const row = await api.post<Record<string, unknown>>('/api/rentals', {
+        product_id: product.id,
+        owner_name: product.ownerName,
         renter_id: params.renterId, renter_name: params.renterName,
         renter_phone: params.renterPhone, renter_address: params.renterAddress,
         renter_wilaya: params.renterWilaya, self_pickup: params.selfPickup,
-        duration_days: params.durationDays, daily_rate: product.rentalPrice,
-        deposit: product.deposit, commission_amount: commission, net_earnings: net,
-        total_amount: totalAmount, handover_token: handoverToken, return_token: returnToken,
+        duration_hours: durationHours,
       });
+      const rentalId = row.id as string;
       setRentals(prev => [rowToRental(row), ...prev]);
       setProducts(prev => prev.map(p => p.id === product.id
         ? { ...p, availableQuantity: Math.max(0, p.availableQuantity - 1), status: p.availableQuantity - 1 <= 0 ? 'rented' : 'available' }
         : p
       ));
       return rentalId;
-    } catch { return ''; }
+    } catch (e) { console.error(e); return ''; }
   }, [products]);
 
   const patchRental = useCallback(async (rentalId: string, body: Record<string, unknown>) => {
-    const row = await api.put<Record<string, unknown>>(`/rentals/${rentalId}/status`, body);
+    const row = await api.put<Record<string, unknown>>(`/api/rentals/${rentalId}/status`, body);
     setRentals(prev => prev.map(r => r.id === rentalId ? rowToRental(row) : r));
   }, []);
 
@@ -258,7 +262,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const prod = products.find(p => p.id === rental.productId);
     if (prod) {
       const newAvail = Math.min(prod.stockQuantity, prod.availableQuantity + 1);
-      await api.put(`/products/${prod.id}`, { available_quantity: newAvail, status: newAvail > 0 ? 'available' : 'rented' });
+      await api.put(`/api/products/${prod.id}`, { available_quantity: newAvail, status: newAvail > 0 ? 'available' : 'rented' });
       setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, availableQuantity: newAvail, status: newAvail > 0 ? 'available' : 'rented' } : p));
     }
   }, [rentals, products, patchRental]);
@@ -280,7 +284,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const scanHandover = useCallback(async (token: string, lessorId: string) => {
     try {
-      const data = await api.post<{ success: boolean; message: string; rental?: Record<string, unknown> }>('/rentals/handover-scan', { token, lessorId });
+      const data = await api.post<{ success: boolean; message: string; rental?: Record<string, unknown> }>('/api/rentals/handover-scan', { token, lessorId });
       if (data.rental) setRentals(prev => prev.map(r => r.id === (data.rental as Record<string, unknown>).id ? rowToRental(data.rental as Record<string, unknown>) : r));
       return { success: data.success, message: data.message };
     } catch (e: unknown) {
@@ -290,7 +294,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const scanReturn = useCallback(async (token: string, lessorId: string) => {
     try {
-      const data = await api.post<{ success: boolean; message: string; rental?: Record<string, unknown> }>('/rentals/return-scan', { token, lessorId });
+      const data = await api.post<{ success: boolean; message: string; rental?: Record<string, unknown> }>('/api/rentals/return-scan', { token, lessorId });
       if (data.rental) setRentals(prev => prev.map(r => r.id === (data.rental as Record<string, unknown>).id ? rowToRental(data.rental as Record<string, unknown>) : r));
       return { success: data.success, message: data.message };
     } catch (e: unknown) {
@@ -321,7 +325,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const fileDispute = useCallback(async (params: { rentalId: string; filedBy: DisputeParty; userId: string; userName: string; userPhone: string; title: string; description: string; }): Promise<string> => {
     const rental = rentals.find(r => r.id === params.rentalId);
     try {
-      const row = await api.post<Record<string, unknown>>('/disputes', {
+      const row = await api.post<Record<string, unknown>>('/api/disputes', {
         rental_id: params.rentalId, product_title: rental?.productTitle || '',
         filed_by: params.filedBy, user_id: params.userId, user_name: params.userName,
         user_phone: params.userPhone, title: params.title, description: params.description,
@@ -332,14 +336,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [rentals]);
 
   const updateDisputeStatus = useCallback(async (disputeId: string, status: DisputeStatus, adminNotes?: string) => {
-    await api.put(`/disputes/${disputeId}`, { status, admin_notes: adminNotes });
+    await api.put(`/api/disputes/${disputeId}`, { status, admin_notes: adminNotes });
     setDisputes(prev => prev.map(d => d.id === disputeId ? { ...d, status, adminNotes, resolvedAt: ['resolved','rejected'].includes(status) ? new Date().toISOString() : d.resolvedAt } : d));
   }, []);
 
   const getDisputesByRental = useCallback((rentalId: string) => disputes.filter(d => d.rentalId === rentalId), [disputes]);
 
   const rateOwner = useCallback(async (params: { ownerId: string; renterId: string; rentalId: string; rating: number; comment?: string }) => {
-    const profile = await api.post<Record<string, unknown>>('/ratings', params);
+    const profile = await api.post<Record<string, unknown>>('/api/ratings', params);
     if (profile) {
       setProducts(prev => prev.map(p => p.ownerId === params.ownerId
         ? { ...p, ownerRating: (profile.owner_rating as number) || 0, ownerReviewCount: (profile.owner_review_count as number) || 0 }

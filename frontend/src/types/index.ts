@@ -12,7 +12,7 @@ export type VerificationStatus = 'none' | 'pending' | 'verified' | 'rejected';
 export type ProductStatus = 'available' | 'rented';
 export type ProductReviewStatus = 'pending' | 'approved' | 'rejected';
 export type AccountStatus = 'active' | 'banned' | 'frozen';
-export type RentalStatus = 'pending_owner' | 'accepted' | 'pending_delivery' | 'active' | 'completed' | 'cancelled' | 'extend_requested';
+export type RentalStatus = 'pending_owner' | 'accepted' | 'pending_delivery' | 'active' | 'completed' | 'cancelled' | 'extend_requested' | 'late' | 'disputed';
 
 export interface User {
   id: string;
@@ -93,8 +93,12 @@ export interface Rental {
   selfPickup: boolean;
   startTime?: string;
   endTime?: string;
+  durationHours: number;
   durationDays: number;
   dailyRate: number;
+  rentalFee: number;
+  platformFee: number;
+  depositAmount: number;
   deposit: number;
   commissionAmount: number;
   netEarnings: number;
@@ -102,14 +106,36 @@ export interface Rental {
   escrowAmount: number;
   latePenalty: number;
   status: RentalStatus;
+  pickupQrCode: string;
+  returnQrCode: string;
   qrCodeDelivery: string;
   qrCodeReturn: string;
   handoverToken?: string;
   returnToken?: string;
+  startedAt?: string;
+  expectedEndAt?: string;
+  actualEndAt?: string;
   createdAt: string;
   extensionRequested?: boolean;
   extensionDays?: number;
-  alert48hSent?: boolean;    // تنبيه 48 ساعة أُرسل
+  alert48hSent?: boolean;
+}
+
+export interface LedgerEntry {
+  id: string;
+  userId: string;
+  rentalId?: string;
+  type: 'deposit_topup' | 'rental_payment' | 'deposit_freeze' | 'deposit_unfreeze' | 'payout_owner' | 'late_penalty' | 'platform_fee' | 'dispute_deduction' | 'deposit_release';
+  amount: number;
+  balanceAfter: number;
+  description: string;
+  productTitle?: string;
+  userName?: string;
+  userPhone?: string;
+  userEmail?: string;
+  ownerName?: string;
+  renterName?: string;
+  createdAt: string;
 }
 
 export interface WithdrawalRequest {

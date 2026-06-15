@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, MapPin, Star, User, Calendar, Play, ZoomIn, X, Truck, ShieldCheck, AlertCircle, ArrowRight, Package, Shield, Phone } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MapPin, Star, User, Calendar, Play, ZoomIn, X, Truck, ShieldCheck, AlertCircle, ArrowRight, Package, Shield, Phone, Clock } from 'lucide-react';
+import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -123,6 +124,18 @@ function PriceRow({ label, value, primary, muted }: { label: string; value: stri
   );
 }
 
+interface PricingDetails {
+  durationHours: number;
+  durationDays: number;
+  totalRentalFee: number;
+  depositAmount: number;
+  platformFee: number;
+  ownerShare: number;
+  totalCharge: number;
+  rate24h: number;
+  commissionRate: number;
+}
+
 /* ── الصفحة الرئيسية ── */
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -132,7 +145,9 @@ export default function ProductDetailPage() {
   const navigate = useNavigate();
 
   const [showRentModal, setShowRentModal] = useState(false);
-  const [days, setDays] = useState(1);
+  const [hours, setHours] = useState(24);
+  const [pricing, setPricing] = useState<PricingDetails | null>(null);
+  const [pricingLoading, setPricingLoading] = useState(false);
   const [renterName, setRenterName] = useState(user?.name || '');
   const [renterPhone, setRenterPhone] = useState(user?.phone || '');
   const [renterAddress, setRenterAddress] = useState('');
@@ -141,6 +156,16 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(false);
 
   const product = getProductById(id || '');
+
+  useEffect(() => {
+    if (!product) return;
+    setPricingLoading(true);
+    api.get<PricingDetails>(`/api/rentals/pricing?productPrice=${product.purchasePrice}&hours=${hours}`)
+      .then(d => setPricing(d))
+      .catch(() => setPricing(null))
+      .finally(() => setPricingLoading(false));
+  }, [hours, product?.purchasePrice]);
+
   if (!product) return (
     <AppLayout>
       <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -151,9 +176,12 @@ export default function ProductDetailPage() {
   );
 
   const isOwner = user?.id === product.ownerId;
-  const commission = product.rentalPrice * days * (product.commissionRate / 100);
-  const net = product.rentalPrice * days - commission;
-  const totalCost = product.rentalPrice * days + product.deposit;
+  const days = hours / 24;
+  const totalCost = pricing?.totalCharge ?? (product.rentalPrice * days + product.deposit);
+  const commission = pricing?.platformFee ?? (product.rentalPrice * days * (product.commissionRate / 100));
+  const net = pricing?.ownerShare ?? (product.rentalPrice * days - commission);
+  const depositAmount = pricing?.depositAmount ?? product.deposit;
+  const rentalFee = pricing?.totalRentalFee ?? (product.rentalPrice * days);
 
   const handleRentNow = () => {
     if (!user) { navigate('/login'); return; }
@@ -171,8 +199,8 @@ export default function ProductDetailPage() {
       toast.error(t('fillAllFields')); return;
     }
     setLoading(true);
-    await createRental({
-      productId: product.id, durationDays: days,
+    const rentalId = await createRental({
+      productId: product.id, durationHours: hours,
       renterId: user.id, renterName: renterName.trim(),
       renterPhone: renterPhone.trim(),
       renterAddress: selfPickup ? 'استلام شخصي' : renterAddress.trim(),
@@ -181,8 +209,12 @@ export default function ProductDetailPage() {
     });
     setLoading(false);
     setShowRentModal(false);
-    toast.success('تم إرسال طلب الاستئجار للمؤجر. في انتظار الموافقة.');
-    navigate('/rentals');
+    if (rentalId) {
+      toast.success('تم إرسال طلب الاستئجار للمؤجر. في انتظار الموافقة.');
+      navigate('/rentals');
+    } else {
+      toast.error('فشل إرسال الطلب. تأكد من رصيدك.');
+    }
   };
 
   const fmt = (n: number) => n.toLocaleString('ar-DZ');
@@ -292,53 +324,89 @@ export default function ProductDetailPage() {
           <div className="space-y-4">
             <Card className="sticky top-4">
               <CardContent className="pt-4 space-y-3">
-                <div>
-                  <p className="text-2xl font-bold text-primary">{fmt(product.rentalPrice)} {t('dz')}</p>
-                  <p className="text-xs text-muted-foreground">{t('perDay')}</p>
-                </div>
+                {/* عرض السعر من نظام التسعير الديناميكي */}
+                {pricing ? (
+                  <div>
+                    <p className="text-2xl font-bold text-primary">{fmt(pricing.rate24h)} {t('dz')}</p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Clock size={11} /> يوم / 24 ساعة
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-2xl font-bold text-primary">{fmt(product.rentalPrice)} {t('dz')}</p>
+                    <p className="text-xs text-muted-foreground">{t('perDay')}</p>
+                  </div>
+                )}
 
-                {/* اختيار عدد الأيام */}
+                {/* اختيار مدة الإيجار بالساعات */}
                 <div className="space-y-1">
-                  <Label className="text-xs">{t('selectDays')}</Label>
+                  <Label className="text-xs flex items-center gap-1">
+                    <Clock size={11} /> مدة الإيجار
+                  </Label>
                   <div className="flex items-center gap-2">
                     <Button type="button" variant="outline" size="icon" className="h-8 w-8"
-                      onClick={() => setDays(d => Math.max(1, d - 1))} disabled={days <= 1}>
+                      onClick={() => setHours(h => Math.max(24, h - 24))} disabled={hours <= 24}>
                       <ChevronLeft size={14} />
                     </Button>
-                    <span className="flex-1 text-center font-bold text-lg">{days}</span>
+                    <div className="flex-1 text-center">
+                      <p className="font-bold text-lg">{hours / 24} يوم</p>
+                      <p className="text-xs text-muted-foreground">{hours} ساعة</p>
+                    </div>
                     <Button type="button" variant="outline" size="icon" className="h-8 w-8"
-                      onClick={() => setDays(d => Math.min(30, d + 1))} disabled={days >= 30}>
+                      onClick={() => setHours(h => Math.min(720, h + 24))} disabled={hours >= 720}>
                       <ChevronRight size={14} />
                     </Button>
+                  </div>
+                  {/* شريط سريع للاختيار */}
+                  <div className="flex gap-1 flex-wrap">
+                    {[24, 48, 72, 168, 336, 720].map(h => (
+                      <button
+                        key={h}
+                        onClick={() => setHours(h)}
+                        className={cn(
+                          'text-xs px-2 py-0.5 rounded-full border transition-colors',
+                          hours === h ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'
+                        )}
+                      >
+                        {h === 24 ? '1 يوم' : h === 48 ? '2 يوم' : h === 72 ? '3 أيام' : h === 168 ? 'أسبوع' : h === 336 ? 'أسبوعان' : 'شهر'}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
                 <Separator />
 
-                {/* ملخص التكلفة */}
-                <div className="space-y-0">
-                  <PriceRow label={`${fmt(product.rentalPrice)} × ${days} ${t('days')}`} value={`${fmt(product.rentalPrice * days)} ${t('dz')}`} />
-                  <PriceRow label={t('deposit')} value={`${fmt(product.deposit)} ${t('dz')}`} />
-                  {/* العمولة مخفية — تظهر للمؤجر فقط في قسم الأرباح */}
-                  {isOwner && (
-                    <PriceRow label={t('commissionAmount')} value={`- ${fmt(Math.round(commission))} ${t('dz')}`} muted />
-                  )}
-                  <PriceRow label={t('totalCost')} value={`${fmt(totalCost)} ${t('dz')}`} primary />
-                  {isOwner && (
-                    <PriceRow label={t('netEarnings')} value={`${fmt(Math.round(net))} ${t('dz')}`} primary />
-                  )}
-                </div>
+                {/* ملخص التكلفة الديناميكي */}
+                {pricingLoading ? (
+                  <div className="text-center text-xs text-muted-foreground py-2">جارٍ الحساب...</div>
+                ) : (
+                  <div className="space-y-0">
+                    <PriceRow
+                      label={`إيجار ${days} يوم (${hours}س)`}
+                      value={`${fmt(Math.round(rentalFee))} ${t('dz')}`}
+                    />
+                    <PriceRow label={`${t('deposit')} (مُسترجعة)`} value={`${fmt(depositAmount)} ${t('dz')}`} />
+                    {isOwner && (
+                      <PriceRow label={`عمولة المنصة (${Math.round((pricing?.commissionRate ?? product.commissionRate / 100) * 100)}%)`} value={`- ${fmt(Math.round(commission))} ${t('dz')}`} muted />
+                    )}
+                    <PriceRow label={t('totalCost')} value={`${fmt(Math.round(totalCost))} ${t('dz')}`} primary />
+                    {isOwner && (
+                      <PriceRow label={t('netEarnings')} value={`${fmt(Math.round(net))} ${t('dz')}`} primary />
+                    )}
+                  </div>
+                )}
 
                 {/* إشعار التجميد */}
                 <div className="flex items-start gap-2 text-xs text-amber-600 bg-amber-500/10 rounded-lg p-2">
                   <ShieldCheck size={13} className="shrink-0 mt-0.5" />
-                  <span>{t('escrowNotice')}</span>
+                  <span>الضمان يُجمّد من رصيدك ويُعاد تلقائياً بعد 48 ساعة من إغلاق الإيجار</span>
                 </div>
 
                 {!isOwner ? (
                   <Button
                     className="w-full h-10 font-semibold"
-                    disabled={product.status !== 'available'}
+                    disabled={product.status !== 'available' || pricingLoading}
                     onClick={handleRentNow}
                   >
                     {product.status === 'available' ? t('rentNow') : t('rented')}
@@ -364,29 +432,32 @@ export default function ProductDetailPage() {
             {/* ملخص سريع + معلومات المؤجر */}
             <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-2">
               <p className="font-semibold truncate">{product.title}</p>
-              {/* تفصيل المبالغ مع العمولة */}
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Clock size={11} /> {days} يوم ({hours} ساعة)
+              </p>
+              {/* تفصيل المبالغ مع نظام التسعير الديناميكي */}
               <div className="space-y-1 text-xs border border-border rounded-md p-2 bg-background">
                 <div className={cn('flex justify-between', isRTL ? 'flex-row-reverse' : '')}>
-                  <span className="text-muted-foreground">{fmt(product.rentalPrice)} × {days} {t('days')}</span>
-                  <span>{fmt(product.rentalPrice * days)} {t('dz')}</span>
+                  <span className="text-muted-foreground">إيجار {days} يوم</span>
+                  <span>{fmt(Math.round(rentalFee))} {t('dz')}</span>
                 </div>
                 <div className={cn('flex justify-between text-destructive', isRTL ? 'flex-row-reverse' : '')}>
-                  <span>عمولة المنصة ({product.commissionRate}%)</span>
+                  <span>عمولة المنصة ({Math.round((pricing?.commissionRate ?? product.commissionRate / 100) * 100)}%)</span>
                   <span>- {fmt(Math.round(commission))} {t('dz')}</span>
                 </div>
                 <div className={cn('flex justify-between text-green-600 dark:text-green-400 font-medium border-t border-border pt-1', isRTL ? 'flex-row-reverse' : '')}>
                   <span>صافي المؤجر</span>
                   <span>{fmt(Math.round(net))} {t('dz')}</span>
                 </div>
-                {product.deposit > 0 && (
+                {depositAmount > 0 && (
                   <div className={cn('flex justify-between text-muted-foreground border-t border-border pt-1', isRTL ? 'flex-row-reverse' : '')}>
                     <span>{t('deposit')} (مُسترجعة)</span>
-                    <span>{fmt(product.deposit)} {t('dz')}</span>
+                    <span>{fmt(depositAmount)} {t('dz')}</span>
                   </div>
                 )}
                 <div className={cn('flex justify-between font-bold text-foreground border-t border-border pt-1', isRTL ? 'flex-row-reverse' : '')}>
                   <span>إجمالي ما تدفعه</span>
-                  <span>{fmt(totalCost)} {t('dz')}</span>
+                  <span>{fmt(Math.round(totalCost))} {t('dz')}</span>
                 </div>
               </div>
               {/* بيانات المؤجر الكاملة — شفافية كاملة */}

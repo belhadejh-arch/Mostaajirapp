@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, ShieldCheck, Package, ArrowUpCircle, Settings, CheckCircle, XCircle, ImageIcon, Upload, TrendingUp, Eye, AlertTriangle, FileText, MessageSquare, Search, Ban, Snowflake, UserCheck, PhoneCall, Trash2, HardDrive, Bell, Radio, Clock, UserPlus } from 'lucide-react';
+import { LayoutDashboard, Users, ShieldCheck, Package, ArrowUpCircle, Settings, CheckCircle, XCircle, ImageIcon, Upload, TrendingUp, Eye, AlertTriangle, FileText, MessageSquare, Search, Ban, Snowflake, UserCheck, PhoneCall, Trash2, HardDrive, Bell, Radio, Clock, UserPlus, Download, BookOpen, DollarSign, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -86,15 +86,37 @@ export default function AdminPage() {
   const [cleanupType, setCleanupType] = useState<'accounts' | 'products' | null>(null);
   const logoFileRef = useRef<HTMLInputElement>(null);
 
+  // ── Audit Log state ──
+  const [ledgerEntries, setLedgerEntries] = useState<Record<string, unknown>[]>([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerTypeFilter, setLedgerTypeFilter] = useState('');
+  const [financialSummary, setFinancialSummary] = useState<Record<string, unknown> | null>(null);
+
   // ── جلب إيجارات المستخدم عند فتح ملفه ──
   React.useEffect(() => {
     if (!userDetail) { setUserRentals([]); return; }
     setUserRentalsLoading(true);
-    api.get<Record<string, unknown>[]>(`/admin/users/${userDetail.id}/rentals`)
+    api.get<Record<string, unknown>[]>(`/api/admin/users/${userDetail.id}/rentals`)
       .then(data => setUserRentals(data))
       .catch(() => setUserRentals([]))
       .finally(() => setUserRentalsLoading(false));
   }, [userDetail?.id]);
+
+  // ── جلب سجل المعاملات عند فتح تبويب التدقيق ──
+  useEffect(() => {
+    if (tab !== 'audit') return;
+    setLedgerLoading(true);
+    const url = ledgerTypeFilter
+      ? `/api/ledger/admin/all?type=${ledgerTypeFilter}&limit=100`
+      : `/api/ledger/admin/all?limit=100`;
+    Promise.all([
+      api.get<Record<string, unknown>[]>(url),
+      api.get<Record<string, unknown>>('/api/ledger/admin/summary'),
+    ])
+      .then(([entries, summary]) => { setLedgerEntries(entries); setFinancialSummary(summary); })
+      .catch(() => {})
+      .finally(() => setLedgerLoading(false));
+  }, [tab, ledgerTypeFilter]);
 
   // ── نظام التحديثات اللحظية والنشاط الأخير ──
   const [lastUpdate, setLastUpdate] = useState(Date.now());
@@ -324,6 +346,12 @@ export default function AdminPage() {
             </TabsTrigger>
             <TabsTrigger value="cleanup" className="gap-1.5">
               <Trash2 size={14} />{t('dataCleanup')}
+            </TabsTrigger>
+            <TabsTrigger value="audit" className="gap-1.5">
+              <BookOpen size={14} />سجل التدقيق
+            </TabsTrigger>
+            <TabsTrigger value="reports" className="gap-1.5">
+              <FileText size={14} />تقارير PDF
             </TabsTrigger>
           </TabsList>
 
@@ -992,6 +1020,190 @@ export default function AdminPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* ── سجل التدقيق المالي ── */}
+          <TabsContent value="audit">
+            <div className="space-y-4">
+              {/* KPIs */}
+              {financialSummary && (
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <StatCard label="أرباح المنصة (عمولات)" value={fmt(financialSummary.platformEarnings as number) + ' دج'} icon={DollarSign} accent />
+                  <StatCard label="حجم الإيجارات الكلي" value={fmt(financialSummary.totalRentalVolume as number) + ' دج'} icon={TrendingUp} />
+                  <StatCard label="إجمالي الغرامات" value={fmt(financialSummary.totalPenalties as number) + ' دج'} icon={AlertTriangle} />
+                  <StatCard label="ضمانات مجمدة" value={fmt(financialSummary.totalFrozenDeposits as number) + ' دج'} icon={HardDrive} />
+                  <StatCard label="إيجارات نشطة" value={String(financialSummary.activeRentals)} icon={Package} />
+                </div>
+              )}
+
+              {/* Filter */}
+              <div className={cn('flex items-center gap-2', isRTL ? 'flex-row-reverse' : '')}>
+                <Filter size={14} className="text-muted-foreground" />
+                <Select value={ledgerTypeFilter} onValueChange={setLedgerTypeFilter}>
+                  <SelectTrigger className="w-[200px] h-8 text-xs">
+                    <SelectValue placeholder="تصفية حسب النوع" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">الكل</SelectItem>
+                    <SelectItem value="rental_payment">دفع إيجار</SelectItem>
+                    <SelectItem value="deposit_freeze">تجميد ضمان</SelectItem>
+                    <SelectItem value="deposit_release">إفراج ضمان</SelectItem>
+                    <SelectItem value="payout_owner">دخل المؤجر</SelectItem>
+                    <SelectItem value="late_penalty">غرامة تأخير</SelectItem>
+                    <SelectItem value="platform_fee">عمولة منصة</SelectItem>
+                    <SelectItem value="deposit_topup">إيداع رصيد</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={() => setLedgerTypeFilter('')}>
+                  <XCircle size={12} /> إعادة تعيين
+                </Button>
+              </div>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <BookOpen size={16} className="text-primary" />
+                    سجل المعاملات المالية
+                    <Badge variant="outline" className="text-xs">{ledgerEntries.length}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {ledgerLoading ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">جارٍ تحميل السجل...</p>
+                  ) : ledgerEntries.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">لا توجد معاملات</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">التاريخ</TableHead>
+                            <TableHead className="text-xs">المستخدم</TableHead>
+                            <TableHead className="text-xs">النوع</TableHead>
+                            <TableHead className="text-xs">المنتج</TableHead>
+                            <TableHead className="text-xs text-left">المبلغ</TableHead>
+                            <TableHead className="text-xs text-left">الرصيد بعد</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {ledgerEntries.slice(0, 100).map((e, i) => {
+                            const isDebit = ['rental_payment','deposit_freeze','late_penalty','platform_fee','dispute_deduction'].includes(e.type as string);
+                            const TYPE_LABELS: Record<string, string> = {
+                              deposit_topup: 'إيداع',
+                              rental_payment: 'دفع إيجار',
+                              deposit_freeze: 'تجميد ضمان',
+                              deposit_unfreeze: 'فك تجميد',
+                              payout_owner: 'دخل مؤجر',
+                              late_penalty: 'غرامة تأخير',
+                              platform_fee: 'عمولة منصة',
+                              dispute_deduction: 'خصم نزاع',
+                              deposit_release: 'إفراج ضمان',
+                            };
+                            return (
+                              <TableRow key={i}>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {new Date(e.created_at as string).toLocaleString('ar-DZ', { dateStyle: 'short', timeStyle: 'short' })}
+                                </TableCell>
+                                <TableCell className="text-xs">
+                                  <p className="font-medium">{e.user_name as string || '—'}</p>
+                                  <p className="text-muted-foreground text-[10px]" dir="ltr">{e.user_phone as string || ''}</p>
+                                </TableCell>
+                                <TableCell className="text-xs">
+                                  <Badge
+                                    className={cn('text-xs', isDebit
+                                      ? 'bg-destructive/10 text-destructive border-destructive/30'
+                                      : 'bg-green-500/10 text-green-700 border-green-300')}
+                                  >
+                                    {TYPE_LABELS[e.type as string] || e.type as string}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate">
+                                  {e.product_title as string || '—'}
+                                </TableCell>
+                                <TableCell className={cn('text-xs font-semibold text-left', isDebit ? 'text-destructive' : 'text-green-600')}>
+                                  {isDebit ? '-' : '+'}{fmt(e.amount as number)} دج
+                                </TableCell>
+                                <TableCell className="text-xs text-left text-muted-foreground">
+                                  {fmt(e.balance_after as number)} دج
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* ── تقارير PDF ── */}
+          <TabsContent value="reports">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card>
+                  <CardContent className="pt-5 space-y-3">
+                    <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                      <FileText size={22} className="text-blue-600" />
+                    </div>
+                    <h3 className="font-semibold">تقرير حركة المحافظ</h3>
+                    <p className="text-xs text-muted-foreground text-pretty">
+                      جميع المعاملات المالية مُجمَّعة حسب المستخدم: إيداعات، إيجارات، ضمانات، مدفوعات.
+                    </p>
+                    <a href="/api/pdf/wallet-ledger" target="_blank" rel="noopener noreferrer">
+                      <Button className="w-full gap-2 mt-1">
+                        <Download size={14} /> تحميل PDF
+                      </Button>
+                    </a>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="pt-5 space-y-3">
+                    <div className="w-12 h-12 rounded-xl bg-green-500/10 flex items-center justify-center">
+                      <TrendingUp size={22} className="text-green-600" />
+                    </div>
+                    <h3 className="font-semibold">تقرير العمليات التشغيلية</h3>
+                    <p className="text-xs text-muted-foreground text-pretty">
+                      جميع عمليات الإيجار بتفاصيلها: المؤجرون، المستأجرون، المدة، الرسوم، الحالة.
+                    </p>
+                    <a href="/api/pdf/operations" target="_blank" rel="noopener noreferrer">
+                      <Button className="w-full gap-2 mt-1" variant="outline">
+                        <Download size={14} /> تحميل PDF
+                      </Button>
+                    </a>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="pt-5 space-y-3">
+                    <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                      <DollarSign size={22} className="text-amber-600" />
+                    </div>
+                    <h3 className="font-semibold">التقرير المالي العام</h3>
+                    <p className="text-xs text-muted-foreground text-pretty">
+                      ملخص مالي شامل: أرباح المنصة، الحجم الإجمالي، الأداء الشهري، توزيع العمليات.
+                    </p>
+                    <a href="/api/pdf/financial-summary" target="_blank" rel="noopener noreferrer">
+                      <Button className="w-full gap-2 mt-1" variant="outline">
+                        <Download size={14} /> تحميل PDF
+                      </Button>
+                    </a>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card className="border-amber-400/30 bg-amber-500/5">
+                <CardContent className="pt-4">
+                  <p className="text-xs text-amber-700 flex items-start gap-2">
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                    التقارير سرية ومخصصة للإدارة فقط. تُولَّد في الوقت الفعلي من قاعدة البيانات وتعكس أحدث البيانات.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
         </Tabs>
       </div>
 
@@ -1493,7 +1705,7 @@ export default function AdminPage() {
                 className="flex-1"
                 disabled={!broadcastTitle.trim() || !broadcastBody.trim()}
                 onClick={async () => {
-                  const userIds = await api.get<string[]>('/admin/users/ids').catch(() => []);
+                  const userIds = await api.get<string[]>('/api/admin/users/ids').catch(() => []);
                   if (!userIds.length) { toast.error('لا يوجد مستخدمون'); return; }
                   const notifications = userIds.map((id: string) => ({
                     user_id: id,
@@ -1501,7 +1713,7 @@ export default function AdminPage() {
                     body: broadcastBody.trim(),
                     type: broadcastType,
                   }));
-                  await api.post('/admin/notifications/broadcast', { notifications });
+                  await api.post('/api/admin/notifications/broadcast', { notifications });
                   toast.success(`تم إرسال الإشعار لـ ${userIds.length} مستخدم`);
                   setBroadcastOpen(false);
                   setBroadcastTitle('');

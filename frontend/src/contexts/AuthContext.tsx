@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loadMe = useCallback(async () => {
     try {
-      const data = await api.get<Record<string, unknown>>('/auth/me');
+      const data = await api.get<Record<string, unknown>>('/api/auth/me');
       setUser(rowToUser(data));
     } catch (err: unknown) {
       // امسح التوكن فقط عند رفض المصادقة (401) وليس عند أخطاء الشبكة أو انقطاع الاتصال
@@ -74,7 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
     try {
       const { token, user: userData } = await api.post<{ token: string; user: Record<string, unknown> }>(
-        '/auth/login', { email: email.trim().toLowerCase(), password }
+        '/api/auth/login', { email: email.trim().toLowerCase(), password }
       );
       setToken(token);
       setUser(rowToUser(userData));
@@ -89,7 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const register = useCallback(async (data: Partial<User> & { password: string }): Promise<boolean> => {
     try {
       const { token, user: userData } = await api.post<{ token: string; user: Record<string, unknown> }>(
-        '/auth/register', {
+        '/api/auth/register', {
           email: (data.email || '').toLowerCase().trim(),
           password: data.password,
           name: data.name || '',
@@ -127,13 +127,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (data.earningsBalance !== undefined) body.earnings_balance = data.earningsBalance;
     if (data.kycRejectionReason !== undefined) body.kyc_rejection_reason = data.kycRejectionReason;
     if (Object.keys(body).length > 0) {
-      try { await api.put('/auth/profile', body); } catch { /* silent */ }
+      try { await api.put('/api/auth/profile', body); } catch { /* silent */ }
     }
   }, [user]);
 
   const changePassword = useCallback(async (oldPassword: string, newPassword: string): Promise<boolean> => {
     try {
-      await api.put('/auth/password', { oldPassword, newPassword });
+      await api.put('/api/auth/password', { oldPassword, newPassword });
       return true;
     } catch {
       return false;
