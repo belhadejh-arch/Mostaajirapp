@@ -27,19 +27,26 @@ router.post('/checkout', requireAuth, async (req, res) => {
 
   // --- 2. قراءة المفتاح: يجب أن يكون secret key (يبدأ بـ live_sk_ أو test_sk_) ---
   const envKey = process.env.CHARGILY_SECRET_KEY || '';
-  const isValidSecretKey = envKey.startsWith('live_sk_') || envKey.startsWith('test_sk_');
+  const isLiveKey = envKey.startsWith('live_sk_');
+  const isTestKey = envKey.startsWith('test_sk_');
 
-  if (!isValidSecretKey) {
+  if (!isLiveKey && !isTestKey) {
     console.error('[Chargily] CHARGILY_SECRET_KEY غير مضبوط أو غير صحيح في متغيرات البيئة');
     return res.status(500).json({ error: 'بوابة الدفع غير مهيأة. يرجى التواصل مع الدعم.' });
   }
 
   const secretKey = envKey;
 
+  // Live endpoint vs Test endpoint — يجب مطابقة نوع المفتاح مع الـ endpoint الصحيح
+  const chargilyBaseUrl = isLiveKey
+    ? 'https://pay.chargily.net/api/v2'
+    : 'https://pay.chargily.net/test/api/v2';
+
   // --- 3. Logs للتشخيص ---
   console.log('=== [Chargily Checkout] ===');
   console.log('  ENV key prefix    :', envKey.substring(0, 15) + '...');
-  console.log('  ENV key type      :', envKey.startsWith('live_sk_') ? '✅ live secret' : '✅ test secret');
+  console.log('  Mode              :', isLiveKey ? '🟢 LIVE' : '🧪 TEST');
+  console.log('  Endpoint          :', chargilyBaseUrl);
   console.log('  amount            :', amountInt);
   console.log('  userId            :', userId);
   console.log('  returnUrl         :', returnUrl);
@@ -55,11 +62,10 @@ router.post('/checkout', requireAuth, async (req, res) => {
   };
 
   console.log('  payload           :', JSON.stringify(payload));
-  console.log('  Authorization     :', `Bearer ${secretKey.substring(0, 12)}...`);
 
   try {
     // --- 5. إرسال الطلب إلى Chargily V2 ---
-    const response = await fetch('https://pay.chargily.net/api/v2/checkouts', {
+    const response = await fetch(`${chargilyBaseUrl}/checkouts`, {
       method : 'POST',
       headers: {
         'Authorization': `Bearer ${secretKey}`,
