@@ -1,4 +1,8 @@
-const BASE_URL = 'https://mostajirapp-backend.onrender.com';
+const BASE_URL = (import.meta.env.VITE_API_URL as string) || 'https://mostajirapp-backend.onrender.com';
+
+// Debug: show which backend URL is being used
+console.log('[API] BASE_URL =', BASE_URL);
+
 const TOKEN_KEY = 'mostajir_token';
 
 export function getToken(): string | null {
@@ -30,22 +34,31 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return body as T;
 }
 
+function url(path: string): string {
+  // path should start with /api/... — merge cleanly with BASE_URL
+  const base = BASE_URL.replace(/\/$/, '');
+  const p = path.startsWith('/') ? path : `/${path}`;
+  const full = `${base}${p}`;
+  console.log('[API] →', full);
+  return full;
+}
+
 export const api = {
   get<T>(path: string): Promise<T> {
-    return fetch(`${BASE_URL}${path}`, { headers: headers() }).then(r => handleResponse<T>(r));
+    return fetch(url(path), { headers: headers() }).then(r => handleResponse<T>(r));
   },
   post<T>(path: string, body?: unknown): Promise<T> {
-    return fetch(`${BASE_URL}${path}`, {
+    return fetch(url(path), {
       method: 'POST', headers: headers(), body: JSON.stringify(body),
     }).then(r => handleResponse<T>(r));
   },
   put<T>(path: string, body?: unknown): Promise<T> {
-    return fetch(`${BASE_URL}${path}`, {
+    return fetch(url(path), {
       method: 'PUT', headers: headers(), body: JSON.stringify(body),
     }).then(r => handleResponse<T>(r));
   },
   delete<T>(path: string): Promise<T> {
-    return fetch(`${BASE_URL}${path}`, {
+    return fetch(url(path), {
       method: 'DELETE', headers: headers(),
     }).then(r => handleResponse<T>(r));
   },
@@ -53,7 +66,7 @@ export const api = {
     const token = getToken();
     const h: Record<string, string> = {};
     if (token) h['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetch(url(path), {
       method: 'POST', headers: h, body: formData,
     });
     return handleResponse<T>(res);
