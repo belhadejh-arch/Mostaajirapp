@@ -51,7 +51,6 @@ router.post('/checkout', requireAuth, async (req, res) => {
     amount: amountInt,
     currency: 'dzd',
     success_url: 'https://mostaajirapp-orpin.vercel.app/wallet?status=success',
-    back_url: 'https://mostaajirapp-orpin.vercel.app/wallet?status=cancel',
   };
 
   try {
