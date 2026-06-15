@@ -5,18 +5,18 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-const ALLOWED_ORIGINS = [
-  // Vercel production & preview (double-a: mostaajir)
-  'https://mostaajirapp.vercel.app',
-  'https://mostaajir.vercel.app',
-  // Vercel production & preview (single-a fallback: mostajir)
-  'https://mostajirapp.vercel.app',
-  'https://mostajir.vercel.app',
-  // local dev
+const REPLIT_DOMAINS = process.env.REPLIT_DOMAINS || '';
+const replitOrigins = REPLIT_DOMAINS
+  ? REPLIT_DOMAINS.split(',').map(d => d.trim()).flatMap(d => [
+      `https://${d}`,
+      `https://${d.replace(/^[^.]+\./, '')}`,
+    ])
+  : [];
+
+const STATIC_ORIGINS = [
   'http://localhost:5000',
   'http://localhost:5173',
   'http://localhost:3000',
-  // extra origins from env (comma-separated)
   ...(process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
     : []),
@@ -24,15 +24,13 @@ const ALLOWED_ORIGINS = [
 
 app.use(cors({
   origin: (origin, cb) => {
-    // allow server-to-server (no origin) or any mostaajir/mostajir vercel preview
-    if (
-      !origin ||
-      ALLOWED_ORIGINS.includes(origin) ||
-      /^https:\/\/mostaajir.*\.vercel\.app$/.test(origin) ||
-      /^https:\/\/mostajir.*\.vercel\.app$/.test(origin)
-    ) {
-      return cb(null, true);
-    }
+    if (!origin) return cb(null, true);
+    if (STATIC_ORIGINS.includes(origin)) return cb(null, true);
+    if (replitOrigins.includes(origin)) return cb(null, true);
+    if (/^https:\/\/.*\.replit\.app$/.test(origin)) return cb(null, true);
+    if (/^https:\/\/.*\.replit\.dev$/.test(origin)) return cb(null, true);
+    if (/^https:\/\/mostaajir.*\.vercel\.app$/.test(origin)) return cb(null, true);
+    if (/^https:\/\/mostajir.*\.vercel\.app$/.test(origin)) return cb(null, true);
     cb(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
