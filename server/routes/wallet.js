@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const axios = require('axios');
 const { pool } = require('../db');
 const { requireAuth } = require('../middleware/auth');
 
@@ -17,7 +18,7 @@ router.get('/transactions', requireAuth, async (req, res) => {
 });
 
 router.post('/checkout', requireAuth, async (req, res) => {
-  const { amount, userId, userEmail, returnUrl, cancelUrl } = req.body;
+  const { amount, userId } = req.body;
 
   // --- 1. التحقق من المبلغ ---
   const amountInt = Math.floor(Number(amount));
@@ -25,71 +26,45 @@ router.post('/checkout', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'المبلغ غير صالح (الحد الأدنى 100 دج)' });
   }
 
-  // --- 2. قراءة المفتاح: يجب أن يكون secret key (يبدأ بـ live_sk_ أو test_sk_) ---
-  const envKey = process.env.CHARGILY_SECRET_KEY || '';
-  const isLiveKey = envKey.startsWith('live_sk_');
-  const isTestKey = envKey.startsWith('test_sk_');
+  // --- 2. قراءة المفتاح من متغيرات البيئة فقط ---
+  const CHARGILY_SECRET_KEY = process.env.CHARGILY_SECRET_KEY || '';
+  const isLiveKey = CHARGILY_SECRET_KEY.startsWith('live_sk_');
+  const isTestKey = CHARGILY_SECRET_KEY.startsWith('test_sk_');
 
   if (!isLiveKey && !isTestKey) {
-    console.error('[Chargily] CHARGILY_SECRET_KEY غير مضبوط أو غير صحيح في متغيرات البيئة');
-    return res.status(500).json({ error: 'بوابة الدفع غير مهيأة. يرجى التواصل مع الدعم.' });
+    console.error('[Chargily] CHARGILY_SECRET_KEY غير مضبوط في متغيرات البيئة');
+    return res.status(500).json({ error: 'بوابة الدفع غير مهيأة.' });
   }
 
-  const secretKey = envKey;
+  // Live endpoint vs Test endpoint تلقائياً حسب نوع المفتاح
+  const chargilyApiUrl = isLiveKey
+    ? 'https://pay.chargily.net/api/v2/checkouts'
+    : 'https://pay.chargily.net/test/api/v2/checkouts';
 
-  // Live endpoint vs Test endpoint — يجب مطابقة نوع المفتاح مع الـ endpoint الصحيح
-  const chargilyBaseUrl = isLiveKey
-    ? 'https://pay.chargily.net/api/v2'
-    : 'https://pay.chargily.net/test/api/v2';
-
-  // --- 3. Logs للتشخيص ---
   console.log('=== [Chargily Checkout] ===');
-  console.log('  ENV key prefix    :', envKey.substring(0, 15) + '...');
-  console.log('  Mode              :', isLiveKey ? '🟢 LIVE' : '🧪 TEST');
-  console.log('  Endpoint          :', chargilyBaseUrl);
-  console.log('  amount            :', amountInt);
-  console.log('  userId            :', userId);
-  console.log('  returnUrl         :', returnUrl);
-  console.log('  cancelUrl         :', cancelUrl);
+  console.log('  Mode    :', isLiveKey ? '🟢 LIVE' : '🧪 TEST');
+  console.log('  Amount  :', amountInt);
+  console.log('  UserId  :', userId);
 
-  // --- 4. بناء الـ payload وفق توثيق Chargily V2 ---
-  const appDomain = returnUrl?.split('/wallet')[0] || '';
+  // --- 3. البيانات المطابقة تماماً لـ Chargily V2 ---
   const payload = {
-    amount   : amountInt,
-    currency : 'dzd',
-    success_url: returnUrl  || `${appDomain}/wallet?status=success`,
-    back_url   : cancelUrl  || `${appDomain}/wallet?status=cancel`,
+    amount: amountInt,
+    currency: 'dzd',
+    success_url: 'https://mostaajirapp-orpin.vercel.app/wallet?status=success',
+    back_url: 'https://mostaajirapp-orpin.vercel.app/wallet?status=cancel',
   };
 
-  console.log('  payload           :', JSON.stringify(payload));
-
   try {
-    // --- 5. إرسال الطلب إلى Chargily V2 ---
-    const response = await fetch(`${chargilyBaseUrl}/checkouts`, {
-      method : 'POST',
+    const response = await axios.post(chargilyApiUrl, payload, {
       headers: {
-        'Authorization': `Bearer ${secretKey}`,
-        'Content-Type' : 'application/json',
+        'Authorization': `Bearer ${CHARGILY_SECRET_KEY}`,
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(payload),
     });
 
-    const rawText = await response.text();
-    console.log('  Chargily HTTP status :', response.status);
-    console.log('  Chargily raw response:', rawText);
+    const data = response.data;
 
-    let data;
-    try { data = JSON.parse(rawText); } catch { data = { raw: rawText }; }
-
-    if (!response.ok) {
-      console.error('[Chargily] FAILED —', response.status, data);
-      return res.status(response.status).json({
-        error  : data.message || data.error || 'فشل الدفع',
-        details: data,
-      });
-    }
-
-    // --- 6. حفظ المعاملة في قاعدة البيانات ---
+    // --- 4. حفظ المعاملة في قاعدة البيانات ---
     await pool.query(
       `INSERT INTO top_up_transactions
          (user_id, amount, status, provider, checkout_id)
@@ -98,11 +73,13 @@ router.post('/checkout', requireAuth, async (req, res) => {
     );
 
     console.log('[Chargily] SUCCESS — checkout_url:', data.checkout_url);
-    res.json({ checkoutUrl: data.checkout_url, checkoutId: data.id });
+    res.json({ checkout_url: data.checkout_url, checkoutId: data.id });
 
-  } catch (e) {
-    console.error('[Chargily] Exception:', e.message);
-    res.status(500).json({ error: e.message });
+  } catch (error) {
+    const status = error.response?.status || 500;
+    const details = error.response?.data || error.message;
+    console.error('[Chargily] FAILED —', status, details);
+    res.status(status).json({ error: 'فشل إنشاء رابط الدفع', details });
   }
 });
 
