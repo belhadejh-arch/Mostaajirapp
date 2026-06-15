@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Wallet, TrendingUp, PlusCircle, ArrowDownCircle, ArrowUpCircle, Lock, ExternalLink, Loader2 } from 'lucide-react';
+import { Wallet, TrendingUp, PlusCircle, ArrowDownCircle, ArrowUpCircle, Lock, ExternalLink, Loader2, CheckCircle2, Clock, XCircle, CreditCard, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AppLayout } from '@/components/layouts/AppLayout';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,9 +19,11 @@ import { cn } from '@/lib/utils';
 interface TxRow {
   id: string;
   amount: number;
-  status: string;
+  status: 'pending' | 'completed' | 'failed';
   provider: string;
+  checkout_id: string | null;
   created_at: string;
+  completed_at: string | null;
 }
 
 export default function WalletPage() {
@@ -30,6 +33,7 @@ export default function WalletPage() {
   const { settings } = useAdmin();
   const navigate = useNavigate();
 
+  const [txRefreshing, setTxRefreshing] = useState(false);
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
@@ -42,13 +46,26 @@ export default function WalletPage() {
   const [topUpTx, setTopUpTx] = useState<TxRow[]>([]);
 
   /* ── جلب المعاملات الحقيقية من قاعدة البيانات ── */
+  const fetchTransactions = async () => {
+    if (!user) return;
+    try {
+      const data = await api.get<TxRow[]>('/wallet/transactions');
+      setTopUpTx(data);
+    } catch {}
+  };
+
   useEffect(() => {
     if (!user) return;
     setTxLoading(true);
-    api.get<TxRow[]>('/wallet/transactions')
-      .then(data => { setTopUpTx(data); setTxLoading(false); })
-      .catch(() => setTxLoading(false));
+    fetchTransactions().finally(() => setTxLoading(false));
   }, [user?.id]);
+
+  const handleRefreshTx = async () => {
+    setTxRefreshing(true);
+    await fetchTransactions();
+    setTxRefreshing(false);
+    toast.success('تم تحديث السجل');
+  };
 
   /* ── معالجة العودة من Chargily ── */
   useEffect(() => {
@@ -84,6 +101,24 @@ export default function WalletPage() {
   );
 
   const fmt = (n: number) => n.toLocaleString('ar-DZ');
+
+  const StatusBadge = ({ status }: { status: TxRow['status'] }) => {
+    if (status === 'completed') return (
+      <Badge className="gap-1 bg-green-500/10 text-green-700 border-green-200 hover:bg-green-500/10">
+        <CheckCircle2 size={11} /> مكتمل
+      </Badge>
+    );
+    if (status === 'failed') return (
+      <Badge className="gap-1 bg-red-500/10 text-red-600 border-red-200 hover:bg-red-500/10">
+        <XCircle size={11} /> فشل
+      </Badge>
+    );
+    return (
+      <Badge className="gap-1 bg-amber-500/10 text-amber-700 border-amber-200 hover:bg-amber-500/10">
+        <Clock size={11} /> معلق
+      </Badge>
+    );
+  };
 
   /* ── إيداع عبر Chargily ── */
   const handleTopUp = async () => {
@@ -260,17 +295,78 @@ export default function WalletPage() {
           </Card>
         )}
 
-        {/* ── سجل المعاملات الحقيقي ── */}
+        {/* ── سجل عمليات الشحن (Chargily) ── */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">{t('transactions')}</CardTitle>
+            <div className={cn('flex items-center justify-between', isRTL ? 'flex-row-reverse' : '')}>
+              <div className={cn('flex items-center gap-2', isRTL ? 'flex-row-reverse' : '')}>
+                <CreditCard size={16} className="text-primary" />
+                <CardTitle className="text-base">سجل عمليات الشحن</CardTitle>
+              </div>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={handleRefreshTx} disabled={txRefreshing}>
+                <RefreshCw size={14} className={cn(txRefreshing && 'animate-spin')} />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {txLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 size={24} className="animate-spin text-muted-foreground" />
               </div>
-            ) : combinedTx.length === 0 ? (
+            ) : topUpTx.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+                <CreditCard size={32} className="opacity-30" />
+                <p className="text-sm">لا توجد عمليات شحن بعد</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {topUpTx.map(tx => (
+                  <div key={tx.id} className={cn('flex items-center gap-3 py-3', isRTL ? 'flex-row-reverse' : '')}>
+                    <div className={cn(
+                      'w-9 h-9 rounded-full flex items-center justify-center shrink-0',
+                      tx.status === 'completed' ? 'bg-green-500/10' :
+                      tx.status === 'failed'    ? 'bg-red-500/10' : 'bg-amber-500/10'
+                    )}>
+                      {tx.status === 'completed' ? <CheckCircle2 size={16} className="text-green-600" /> :
+                       tx.status === 'failed'    ? <XCircle size={16} className="text-red-500" /> :
+                                                   <Clock size={16} className="text-amber-600" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={cn('flex items-center gap-2 flex-wrap', isRTL ? 'flex-row-reverse' : '')}>
+                        <p className="text-sm font-medium">شحن محفظة</p>
+                        <StatusBadge status={tx.status} />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {new Date(tx.created_at).toLocaleString('ar-DZ', { dateStyle: 'medium', timeStyle: 'short' })}
+                        {tx.completed_at && (
+                          <span className="text-green-600 mr-2">
+                            · اكتمل {new Date(tx.completed_at).toLocaleString('ar-DZ', { dateStyle: 'short', timeStyle: 'short' })}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <div className={cn('text-sm font-bold shrink-0',
+                      tx.status === 'completed' ? 'text-green-600' :
+                      tx.status === 'failed'    ? 'text-red-500' : 'text-amber-600'
+                    )}>
+                      {tx.status === 'completed' ? `+${fmt(tx.amount)}` :
+                       tx.status === 'failed'    ? 'فشل' : `${fmt(tx.amount)}`}
+                      {tx.status !== 'failed' && <span className="text-xs font-normal text-muted-foreground mr-1"> {t('dz')}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── سجل المعاملات الكامل ── */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{t('transactions')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {combinedTx.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-8">لا توجد معاملات بعد</p>
             ) : (
               <div className="space-y-0 divide-y divide-border">
