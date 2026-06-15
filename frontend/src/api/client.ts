@@ -1,8 +1,6 @@
-const _env = import.meta.env.VITE_API_URL as string;
-// Only use env var if it's a full URL (starts with http), otherwise fallback to hardcoded
-const BASE_URL = (_env && _env.startsWith('http'))
-  ? _env.replace(/\/$/, '')
-  : 'https://mostaajirapp-backend.onrender.com/api';
+// Use relative /api so Vite proxy forwards to localhost:3001 in dev,
+// and the same-origin backend in production. No more Render fallback.
+const BASE_URL = '/api';
 
 console.log('[API] BASE_URL =', BASE_URL);
 

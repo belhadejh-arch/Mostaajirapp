@@ -22,17 +22,16 @@ router.post('/checkout', requireAuth, async (req, res) => {
   const amountInt = Math.floor(Number(amount));
   if (!amountInt || amountInt < 100) return res.status(400).json({ error: 'Invalid amount (min 100 DZD)' });
 
-  const secretKey = process.env.CHARGILY_SECRET_KEY;
+  const secretKey = 'live_sk_DbJMghBN6ql75nN3C3QNRfk2Rrfy2nBdcoo2EqcT';
   console.log("API Key exists:", !!secretKey);
-  if (!secretKey) return res.status(500).json({ error: 'Payment gateway not configured' });
 
   try {
     const appDomain = process.env.APP_DOMAIN || returnUrl?.split('/wallet')[0] || '';
     const webhookUrl = `${process.env.SERVER_URL || appDomain}/api/wallet/chargily-webhook`;
 
     const payload = {
-      amount: amountInt,          // ✅ Integer number, never string
-      currency: 'dzd',            // ✅ Chargily requires lowercase 'dzd'
+      amount: amountInt,
+      currency: 'dzd',
       customer_email: userEmail,
       metadata: { user_id: userId },
       success_url: returnUrl || `${appDomain}/wallet?status=success`,
@@ -44,7 +43,10 @@ router.post('/checkout', requireAuth, async (req, res) => {
 
     const response = await fetch('https://pay.chargily.net/api/v2/checkouts', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${secretKey}`, 'Content-Type': 'application/json' },
+      headers: {
+        'Authorization': 'Bearer ' + secretKey,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify(payload),
     });
     const data = await response.json();
@@ -60,6 +62,7 @@ router.post('/checkout', requireAuth, async (req, res) => {
     res.json({ checkoutUrl: data.checkout_url, checkoutId: data.id });
   } catch (e) {
     console.error('[Chargily] Error:', e.message);
+    if (e.response) console.error('[Chargily] Error data:', JSON.stringify(e.response.data));
     res.status(500).json({ error: e.message });
   }
 });
