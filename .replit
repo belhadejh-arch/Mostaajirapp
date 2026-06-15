@@ -102,3 +102,6 @@ externalPort = 8080
 
 [userenv.shared]
 JWT_SECRET = "mostajir_super_secret_2024_x9kLmPqRvTw3"
+
+[userenv.development]
+VITE_API_URL = "http://localhost:3001"

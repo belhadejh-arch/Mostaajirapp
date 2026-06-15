@@ -1,6 +1,7 @@
-// Use relative /api so Vite proxy forwards to localhost:3001 in dev,
-// and the same-origin backend in production. No more Render fallback.
-const BASE_URL = '/api';
+const _env = import.meta.env.VITE_API_URL as string;
+const BASE_URL = (_env && _env.startsWith('http'))
+  ? _env.replace(/\/$/, '')
+  : 'https://mostaajirapp-backend.onrender.com/api';
 
 console.log('[API] BASE_URL =', BASE_URL);
 
