@@ -28,16 +28,18 @@ router.post('/checkout', requireAuth, async (req, res) => {
   // --- 2. قراءة المفتاح: يجب أن يكون secret key (يبدأ بـ live_sk_ أو test_sk_) ---
   const envKey = process.env.CHARGILY_SECRET_KEY || '';
   const isValidSecretKey = envKey.startsWith('live_sk_') || envKey.startsWith('test_sk_');
-  const secretKey = isValidSecretKey
-    ? envKey
-    : 'live_sk_DbJMghBN6ql75nN3C3QNRfk2Rrfy2nBdcoo2EqcT';
+
+  if (!isValidSecretKey) {
+    console.error('[Chargily] CHARGILY_SECRET_KEY غير مضبوط أو غير صحيح في متغيرات البيئة');
+    return res.status(500).json({ error: 'بوابة الدفع غير مهيأة. يرجى التواصل مع الدعم.' });
+  }
+
+  const secretKey = envKey;
 
   // --- 3. Logs للتشخيص ---
   console.log('=== [Chargily Checkout] ===');
-  console.log('  ENV key value     :', envKey ? envKey.substring(0, 15) + '...' : '(empty)');
-  console.log('  ENV key type      :', envKey.startsWith('live_sk_') ? '✅ secret' : envKey.startsWith('live_pk_') ? '❌ PUBLIC (wrong!)' : envKey.startsWith('test_sk_') ? '✅ test-secret' : '❓ unknown');
-  console.log('  Using key source  :', isValidSecretKey ? 'env variable' : '⚠️ hardcoded fallback');
-  console.log('  Active key prefix :', secretKey.substring(0, 15) + '...');
+  console.log('  ENV key prefix    :', envKey.substring(0, 15) + '...');
+  console.log('  ENV key type      :', envKey.startsWith('live_sk_') ? '✅ live secret' : '✅ test secret');
   console.log('  amount            :', amountInt);
   console.log('  userId            :', userId);
   console.log('  returnUrl         :', returnUrl);
