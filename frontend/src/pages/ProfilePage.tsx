@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShieldCheck, Shield, ShieldX, Star, Package, LogOut, Globe, ChevronRight, Camera, Trash2, User, KeyRound, TrendingUp, Clock, CheckCircle, XCircle, ArrowUpDown, Phone, HelpCircle } from 'lucide-react';
+import { ShieldCheck, Shield, ShieldX, Star, Package, LogOut, Globe, ChevronRight, Camera, Trash2, User, KeyRound, TrendingUp, Clock, CheckCircle, XCircle, ArrowUpDown, Phone, HelpCircle, ScrollText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { Language, Rental } from '@/types';
 import type { TranslationKey } from '@/constants/i18n';
+import { TermsContent } from '@/components/common/TermsOfUse';
 
 const LANGS: { code: Language; label: string }[] = [
   { code: 'ar', label: 'العربية' },
@@ -353,6 +354,15 @@ export default function ProfilePage() {
               </a>
             </div>
             <p className="text-xs text-muted-foreground">تواصل معنا عبر واتساب لأي استفسار أو مشكل</p>
+          </div>
+
+          {/* سياسة الاستخدام */}
+          <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <ScrollText size={15} className="text-primary" />
+              <span>سياسة الاستخدام</span>
+            </div>
+            <TermsContent compact />
           </div>
 
           <Button

@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, ShieldCheck, Package, ArrowUpCircle, Settings, CheckCircle, XCircle, ImageIcon, Upload, TrendingUp, Eye, AlertTriangle, FileText, MessageSquare, Search, Ban, Snowflake, UserCheck, PhoneCall, Trash2, HardDrive, Bell, Radio, Clock, UserPlus, Download, BookOpen, DollarSign, Filter } from 'lucide-react';
+import { LayoutDashboard, Users, ShieldCheck, Package, ArrowUpCircle, Settings, CheckCircle, XCircle, ImageIcon, Upload, TrendingUp, Eye, AlertTriangle, FileText, MessageSquare, Search, Ban, Snowflake, UserCheck, PhoneCall, Trash2, HardDrive, Bell, Radio, Clock, UserPlus, Download, BookOpen, DollarSign, Filter, ScrollText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import type { AdminUser } from '@/contexts/AdminContext';
 import type { Dispute } from '@/types';
+import { TermsContent } from '@/components/common/TermsOfUse';
 
 /* ── بطاقة إحصاء ── */
 function StatCard({ label, value, icon: Icon, accent }: { label: string; value: string | number; icon: React.ElementType; accent?: boolean }) {
@@ -352,6 +353,9 @@ export default function AdminPage() {
             </TabsTrigger>
             <TabsTrigger value="reports" className="gap-1.5">
               <FileText size={14} />تقارير PDF
+            </TabsTrigger>
+            <TabsTrigger value="terms" className="gap-1.5">
+              <ScrollText size={14} />سياسة الاستخدام
             </TabsTrigger>
           </TabsList>
 
@@ -1202,6 +1206,15 @@ export default function AdminPage() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* ── سياسة الاستخدام ── */}
+          <TabsContent value="terms">
+            <Card>
+              <CardContent className="pt-5">
+                <TermsContent />
+              </CardContent>
+            </Card>
           </TabsContent>
 
         </Tabs>

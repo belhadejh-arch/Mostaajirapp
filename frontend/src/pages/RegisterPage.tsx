@@ -11,6 +11,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { WILAYAS } from '@/constants/wilayas';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { TermsModal } from '@/components/common/TermsOfUse';
 
 export default function RegisterPage() {
   const { t, isRTL } = useLanguage();
@@ -23,6 +24,7 @@ export default function RegisterPage() {
   const [showPass, setShowPass] = useState(false);
   const [wilayaCode, setWilayaCode] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,12 +32,22 @@ export default function RegisterPage() {
       toast.error(t('fillAllFields')); return;
     }
     if (password.length < 6) { toast.error('كلمة المرور يجب أن تكون 6 أحرف على الأقل'); return; }
+    setShowTerms(true);
+  };
+
+  const handleAcceptTerms = async () => {
+    setShowTerms(false);
     setLoading(true);
     const wilaya = WILAYAS.find(w => w.code === wilayaCode);
-    const ok = await register({ name: name.trim(), email: email.trim(), phone, password, wilayaCode, wilayaName: wilaya?.ar || '' });
+    const ok = await register({ name: name.trim(), email: email.trim(), phone, password, wilayaCode: wilayaCode!, wilayaName: wilaya?.ar || '' });
     setLoading(false);
     if (ok) { toast.success('تم إنشاء الحساب بنجاح'); navigate('/verification'); }
     else toast.error(t('error'));
+  };
+
+  const handleRejectTerms = () => {
+    setShowTerms(false);
+    toast.info('يجب قبول شروط الاستخدام للتسجيل في التطبيق');
   };
 
   return (
@@ -113,7 +125,12 @@ export default function RegisterPage() {
           </CardContent>
         </Card>
       </div>
+
+      <TermsModal
+        open={showTerms}
+        onAccept={handleAcceptTerms}
+        onReject={handleRejectTerms}
+      />
     </div>
   );
 }
-
