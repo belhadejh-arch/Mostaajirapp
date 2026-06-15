@@ -3,7 +3,9 @@ import react from "@vitejs/plugin-react";
 import svgr from "vite-plugin-svgr";
 import path from "path";
 
-export default defineConfig({
+const RENDER_BACKEND = "https://mostaajirapp-backend.onrender.com";
+
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     svgr({
@@ -14,6 +16,13 @@ export default defineConfig({
       },
     }),
   ],
+  define: {
+    "import.meta.env.VITE_API_URL": JSON.stringify(
+      mode === "production"
+        ? (process.env.VITE_API_URL || RENDER_BACKEND)
+        : (process.env.VITE_API_URL || "")
+    ),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -25,9 +34,8 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        target: process.env.VITE_API_URL || "http://localhost:3001",
+        target: "http://localhost:3001",
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, "/api"),
       },
     },
   },
@@ -43,4 +51,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

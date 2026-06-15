@@ -1,5 +1,7 @@
 const TOKEN_KEY = 'mostajir_token';
 
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -8,6 +10,10 @@ export function setToken(token: string): void {
 }
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+}
+
+function url(path: string): string {
+  return `${API_BASE}${path}`;
 }
 
 function headers(extra?: Record<string, string>): Record<string, string> {
@@ -29,20 +35,20 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 export const api = {
   get<T>(path: string): Promise<T> {
-    return fetch(path, { headers: headers() }).then(r => handleResponse<T>(r));
+    return fetch(url(path), { headers: headers() }).then(r => handleResponse<T>(r));
   },
   post<T>(path: string, body?: unknown): Promise<T> {
-    return fetch(path, {
+    return fetch(url(path), {
       method: 'POST', headers: headers(), body: JSON.stringify(body),
     }).then(r => handleResponse<T>(r));
   },
   put<T>(path: string, body?: unknown): Promise<T> {
-    return fetch(path, {
+    return fetch(url(path), {
       method: 'PUT', headers: headers(), body: JSON.stringify(body),
     }).then(r => handleResponse<T>(r));
   },
   delete<T>(path: string): Promise<T> {
-    return fetch(path, {
+    return fetch(url(path), {
       method: 'DELETE', headers: headers(),
     }).then(r => handleResponse<T>(r));
   },
@@ -50,7 +56,7 @@ export const api = {
     const token = getToken();
     const h: Record<string, string> = {};
     if (token) h['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(path, { method: 'POST', headers: h, body: formData });
+    const res = await fetch(url(path), { method: 'POST', headers: h, body: formData });
     return handleResponse<T>(res);
   },
 };
