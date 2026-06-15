@@ -45,9 +45,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const data = await api.get<Record<string, unknown>>('/auth/me');
       setUser(rowToUser(data));
-    } catch {
-      clearToken();
-      setUser(null);
+    } catch (err: unknown) {
+      // امسح التوكن فقط عند رفض المصادقة (401) وليس عند أخطاء الشبكة أو انقطاع الاتصال
+      const msg = (err as Error).message || '';
+      if (msg === 'Unauthorized' || msg.includes('401')) {
+        clearToken();
+        setUser(null);
+      }
+      // في حالة خطأ الشبكة: لا نمسح التوكن حتى لا يُسجَّل الخروج تلقائياً
     }
   }, []);
 

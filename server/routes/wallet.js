@@ -47,10 +47,16 @@ router.post('/checkout', requireAuth, async (req, res) => {
   console.log('  UserId  :', userId);
 
   // --- 3. البيانات المطابقة تماماً لـ Chargily V2 ---
+  const webhookUrl = process.env.SERVER_URL
+    ? `${process.env.SERVER_URL}/api/wallet/chargily-webhook`
+    : 'https://mostaajirapp-backend.onrender.com/api/wallet/chargily-webhook';
+
   const payload = {
     amount: amountInt,
     currency: 'dzd',
     success_url: 'https://mostaajirapp-orpin.vercel.app/wallet?status=success',
+    webhook_endpoint: webhookUrl,
+    metadata: { user_id: userId },
   };
 
   try {

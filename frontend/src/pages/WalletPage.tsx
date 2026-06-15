@@ -71,20 +71,27 @@ export default function WalletPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const status = params.get('status');
-    const amount = params.get('amount');
-    if (status === 'success' && amount) {
-      toast.success(`✅ تمت عملية الدفع بنجاح! سيتم تحديث رصيدك خلال لحظات.`);
+    if (status === 'success') {
+      toast.success('✅ تمت عملية الدفع بنجاح! جارٍ تحديث رصيدك...');
       window.history.replaceState({}, '', '/wallet');
-      if (user) {
-        setTimeout(() => {
-          api.get<{ wallet_balance: number }>('/auth/me')
-            .then(data => { if (data) updateUser({ walletBalance: data.wallet_balance }); })
-            .catch(() => {});
-          api.get<TxRow[]>('/wallet/transactions')
-            .then(data => setTopUpTx(data))
-            .catch(() => {});
-        }, 3000);
-      }
+
+      // تحديث فوري بعد ثانية، ثم مرة أخرى بعد 5 ثوانٍ للتأكد من استلام الـ webhook
+      const refresh = () => {
+        if (!user) return;
+        api.get<Record<string, unknown>>('/auth/me')
+          .then(data => {
+            if (data?.wallet_balance !== undefined) {
+              updateUser({ walletBalance: data.wallet_balance as number });
+            }
+          })
+          .catch(() => {});
+        api.get<TxRow[]>('/wallet/transactions')
+          .then(data => setTopUpTx(data))
+          .catch(() => {});
+      };
+
+      setTimeout(refresh, 2000);
+      setTimeout(refresh, 6000);
     } else if (status === 'cancel') {
       toast.info('تم إلغاء عملية الدفع.');
       window.history.replaceState({}, '', '/wallet');
