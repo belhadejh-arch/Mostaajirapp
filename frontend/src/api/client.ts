@@ -1,6 +1,9 @@
-const BASE_URL = (import.meta.env.VITE_API_URL as string) || 'https://mostaajirapp-backend.onrender.com/api';
+const _env = import.meta.env.VITE_API_URL as string;
+// Only use env var if it's a full URL (starts with http), otherwise fallback to hardcoded
+const BASE_URL = (_env && _env.startsWith('http'))
+  ? _env.replace(/\/$/, '')
+  : 'https://mostaajirapp-backend.onrender.com/api';
 
-// Debug: show which backend URL is being used
 console.log('[API] BASE_URL =', BASE_URL);
 
 const TOKEN_KEY = 'mostajir_token';
