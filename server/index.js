@@ -2,6 +2,51 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 
+/* ── Auto-seed: run schema + admin account on every cold start ── */
+(async () => {
+  try {
+    const { pool } = require('./db');
+    const bcrypt = require('bcrypt');
+    const fs = require('fs');
+    const schemaPath = path.join(__dirname, 'scripts', 'setup-db.js');
+
+    // Apply schema via the setup script's SQL inline
+    const schemaSql = fs.existsSync(path.join(__dirname, 'schema.sql'))
+      ? fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8')
+      : null;
+
+    if (schemaSql) {
+      await pool.query(schemaSql);
+      console.log('[Seed] Schema applied');
+    }
+
+    // Ensure admin account exists
+    const adminEmail = 'admin@mostajir.dz';
+    const adminPassword = 'Admin@Mostajir2024!';
+    const { rows: [existing] } = await pool.query(
+      `SELECT id FROM users WHERE email=$1`, [adminEmail]
+    );
+    if (!existing) {
+      const hash = await bcrypt.hash(adminPassword, 10);
+      const { rows: [newUser] } = await pool.query(
+        `INSERT INTO users (email, password_hash) VALUES ($1,$2) RETURNING id`,
+        [adminEmail, hash]
+      );
+      await pool.query(
+        `INSERT INTO profiles (id, name, is_admin, verification_status)
+         VALUES ($1,'Admin MOSTAJIR',true,'verified')`,
+        [newUser.id]
+      );
+      console.log('[Seed] Admin account created: admin@mostajir.dz');
+    } else {
+      await pool.query(`UPDATE profiles SET is_admin=true WHERE id=$1`, [existing.id]);
+      console.log('[Seed] Admin account verified');
+    }
+  } catch (err) {
+    console.error('[Seed] Error:', err.message);
+  }
+})();
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 

@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS profiles (
   is_admin BOOLEAN NOT NULL DEFAULT false,
   avatar_uri TEXT,
   kyc_rejection_reason TEXT,
+  terms_accepted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -241,3 +242,26 @@ DROP TRIGGER IF EXISTS trg_update_owner_rating ON owner_ratings;
 CREATE TRIGGER trg_update_owner_rating
 AFTER INSERT ON owner_ratings
 FOR EACH ROW EXECUTE FUNCTION update_owner_rating();
+
+-- ── Safe column additions for existing databases (idempotent) ──
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS owner_rating NUMERIC DEFAULT 0;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS owner_review_count INTEGER DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS owner_phone TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS owner_address TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS owner_wilaya_code INTEGER;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS owner_wilaya_name TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS owner_rating NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS owner_review_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS owner_total_rentals INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS alert_48h_sent BOOLEAN DEFAULT false;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS handover_token TEXT;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS return_token TEXT;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS extension_requested BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS extension_days INTEGER;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS self_pickup BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id, read);
+CREATE INDEX IF NOT EXISTS idx_rentals_owner_id ON rentals(owner_id);
+CREATE INDEX IF NOT EXISTS idx_rentals_renter_id ON rentals(renter_id);
+CREATE INDEX IF NOT EXISTS idx_products_owner_id ON products(owner_id);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
