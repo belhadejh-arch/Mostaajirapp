@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, ShieldCheck, Package, ArrowUpCircle, Settings, CheckCircle, XCircle, ImageIcon, Upload, TrendingUp, Eye, AlertTriangle, FileText, MessageSquare, Search, Ban, Snowflake, UserCheck, PhoneCall, Trash2, HardDrive, Bell, Radio, Clock, UserPlus, Download, BookOpen, DollarSign, Filter, ScrollText } from 'lucide-react';
+import { LayoutDashboard, Users, ShieldCheck, Package, ArrowUpCircle, Settings, CheckCircle, XCircle, ImageIcon, Upload, TrendingUp, Eye, AlertTriangle, FileText, MessageSquare, Search, Ban, Snowflake, UserCheck, PhoneCall, Trash2, HardDrive, Bell, Radio, Clock, UserPlus, Download, BookOpen, DollarSign, Filter, ScrollText, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -97,6 +97,8 @@ export default function AdminPage() {
   const [financialsLoading, setFinancialsLoading] = useState(false);
   const [payoutAlerts, setPayoutAlerts] = useState<Record<string, unknown>[]>([]);
   const [payoutLoading, setPayoutLoading] = useState(false);
+  const [ledgerSearch, setLedgerSearch] = useState('');
+  const [payoutNotifying, setPayoutNotifying] = useState<string | null>(null);
 
   // ── جلب إيجارات المستخدم عند فتح ملفه ──
   React.useEffect(() => {
@@ -196,7 +198,26 @@ export default function AdminPage() {
     </AppLayout>
   );
 
-  const fmt = (n: number) => n.toLocaleString('ar-DZ');
+  const fmt = (n: number) => (Number(n) || 0).toLocaleString('ar-DZ');
+
+  /* ── تحميل PDF مع رأس المصادقة ── */
+  const downloadPdf = async (path: string, filename: string) => {
+    try {
+      const token = localStorage.getItem('mostajir_token');
+      const base = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+      const res = await fetch(`${base}${path}`, {
+        headers: { Authorization: `Bearer ${token || ''}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('فشل تحميل التقرير. تأكد من صلاحياتك وحاول مجدداً.');
+    }
+  };
 
   /* ── تغيير الشعار ── */
   const handleLogoFile = (files: FileList | null) => {
@@ -1114,11 +1135,11 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {/* Filter */}
-              <div className={cn('flex items-center gap-2', isRTL ? 'flex-row-reverse' : '')}>
-                <Filter size={14} className="text-muted-foreground" />
+              {/* Filter + Search */}
+              <div className={cn('flex items-center gap-2 flex-wrap', isRTL ? 'flex-row-reverse' : '')}>
+                <Filter size={14} className="text-muted-foreground shrink-0" />
                 <Select value={ledgerTypeFilter} onValueChange={setLedgerTypeFilter}>
-                  <SelectTrigger className="w-[200px] h-8 text-xs">
+                  <SelectTrigger className="w-[180px] h-8 text-xs">
                     <SelectValue placeholder="تصفية حسب النوع" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1132,9 +1153,19 @@ export default function AdminPage() {
                     <SelectItem value="deposit_topup">إيداع رصيد</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={() => setLedgerTypeFilter('')}>
-                  <XCircle size={12} /> إعادة تعيين
-                </Button>
+                <input
+                  type="text"
+                  placeholder="بحث باسم أو هاتف المستخدم..."
+                  value={ledgerSearch}
+                  onChange={e => setLedgerSearch(e.target.value)}
+                  className="h-8 text-xs px-3 rounded-md border border-border bg-background w-[220px] focus:outline-none focus:ring-1 focus:ring-primary"
+                  dir="rtl"
+                />
+                {(ledgerTypeFilter || ledgerSearch) && (
+                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={() => { setLedgerTypeFilter(''); setLedgerSearch(''); }}>
+                    <XCircle size={12} /> إعادة تعيين
+                  </Button>
+                )}
               </div>
 
               <Card>
@@ -1164,7 +1195,14 @@ export default function AdminPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {ledgerEntries.slice(0, 100).map((e, i) => {
+                          {ledgerEntries
+                            .filter(e => !ledgerSearch || (
+                              (e.user_name as string || '').includes(ledgerSearch) ||
+                              (e.user_phone as string || '').includes(ledgerSearch) ||
+                              (e.product_title as string || '').includes(ledgerSearch)
+                            ))
+                            .slice(0, 100)
+                            .map((e, i) => {
                             const isDebit = ['rental_payment','deposit_freeze','late_penalty','platform_fee','dispute_deduction'].includes(e.type as string);
                             const TYPE_LABELS: Record<string, string> = {
                               deposit_topup: 'إيداع',
@@ -1229,11 +1267,9 @@ export default function AdminPage() {
                     <p className="text-xs text-muted-foreground text-pretty">
                       جميع المعاملات المالية مُجمَّعة حسب المستخدم: إيداعات، إيجارات، ضمانات، مدفوعات.
                     </p>
-                    <a href="/api/pdf/wallet-ledger" target="_blank" rel="noopener noreferrer">
-                      <Button className="w-full gap-2 mt-1">
-                        <Download size={14} /> تحميل PDF
-                      </Button>
-                    </a>
+                    <Button className="w-full gap-2 mt-1" onClick={() => downloadPdf('/api/pdf/wallet-ledger', 'wallet-ledger.pdf')}>
+                      <Download size={14} /> تحميل PDF
+                    </Button>
                   </CardContent>
                 </Card>
 
@@ -1246,11 +1282,9 @@ export default function AdminPage() {
                     <p className="text-xs text-muted-foreground text-pretty">
                       جميع عمليات الإيجار بتفاصيلها: المؤجرون، المستأجرون، المدة، الرسوم، الحالة.
                     </p>
-                    <a href="/api/pdf/operations" target="_blank" rel="noopener noreferrer">
-                      <Button className="w-full gap-2 mt-1" variant="outline">
-                        <Download size={14} /> تحميل PDF
-                      </Button>
-                    </a>
+                    <Button className="w-full gap-2 mt-1" variant="outline" onClick={() => downloadPdf('/api/pdf/operations', 'operations-report.pdf')}>
+                      <Download size={14} /> تحميل PDF
+                    </Button>
                   </CardContent>
                 </Card>
 
@@ -1263,11 +1297,9 @@ export default function AdminPage() {
                     <p className="text-xs text-muted-foreground text-pretty">
                       ملخص مالي شامل: أرباح المنصة، الحجم الإجمالي، الأداء الشهري، توزيع العمليات.
                     </p>
-                    <a href="/api/pdf/financial-summary" target="_blank" rel="noopener noreferrer">
-                      <Button className="w-full gap-2 mt-1" variant="outline">
-                        <Download size={14} /> تحميل PDF
-                      </Button>
-                    </a>
+                    <Button className="w-full gap-2 mt-1" variant="outline" onClick={() => downloadPdf('/api/pdf/financial-summary', 'financial-summary.pdf')}>
+                      <Download size={14} /> تحميل PDF
+                    </Button>
                   </CardContent>
                 </Card>
               </div>
@@ -1303,6 +1335,23 @@ export default function AdminPage() {
                 <p className="text-center text-muted-foreground py-12">لا توجد بيانات مالية بعد</p>
               ) : (
                 <>
+                  {/* ── KPIs ── */}
+                  {financials.kpis && (() => {
+                    const k = financials.kpis as Record<string, number>;
+                    return (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <StatCard label="إجمالي أرباح المنصة" value={fmt(k.totalRevenue) + ' دج'} icon={DollarSign} accent />
+                        <StatCard label="هذا الشهر" value={fmt(k.monthlyRevenue) + ' دج'} icon={TrendingUp} />
+                        <StatCard label="هذا الأسبوع" value={fmt(k.weeklyRevenue) + ' دج'} icon={TrendingUp} />
+                        <StatCard label="اليوم" value={fmt(k.dailyRevenue) + ' دج'} icon={DollarSign} />
+                        <StatCard label="حجم الإيجارات الكلي" value={fmt(k.totalRentalVolume) + ' دج'} icon={Package} />
+                        <StatCard label="إجمالي الغرامات" value={fmt(k.totalPenalties) + ' دج'} icon={AlertTriangle} />
+                        <StatCard label="ضمانات مجمدة الآن" value={fmt(k.totalFrozen) + ' دج'} icon={HardDrive} />
+                        <StatCard label="عدد المستخدمين" value={String(k.totalUsers)} icon={Users} />
+                      </div>
+                    );
+                  })()}
+
                   {/* ── إيرادات الـ30 يوم الأخيرة ── */}
                   <Card>
                     <CardHeader className="pb-2">
@@ -1390,21 +1439,41 @@ export default function AdminPage() {
           {/* ── تنبيهات المدفوعات ── */}
           <TabsContent value="payout">
             <div className="space-y-4">
+              {/* ── بانر تنبيه عندما توجد أرباح معلقة ── */}
+              {payoutAlerts.length > 0 && !payoutLoading && (
+                <div className="flex items-start gap-3 rounded-xl bg-amber-500/10 border border-amber-400/30 p-4">
+                  <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-800">
+                      {payoutAlerts.length} مؤجر لديهم أرباح جاهزة للصرف
+                    </p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      استخدم زر "تنبيه بالسحب" لإرسال إشعار لكل مؤجر ليقدم طلب سحب من تطبيقه.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base flex items-center gap-2">
                     <DollarSign size={16} className="text-primary" />
                     مؤجرون لديهم أرباح جاهزة للسحب
                     {payoutAlerts.length > 0 && (
-                      <Badge className="bg-primary/10 text-primary border-primary/20">{payoutAlerts.length}</Badge>
+                      <Badge className="bg-amber-500/10 text-amber-700 border-amber-300">{payoutAlerts.length}</Badge>
                     )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                   {payoutLoading ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">جارٍ التحميل...</p>
+                    <div className="flex items-center justify-center py-10">
+                      <div className="w-6 h-6 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                    </div>
                   ) : payoutAlerts.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-8">لا توجد أرباح معلقة</p>
+                    <div className="flex flex-col items-center py-10 gap-2 text-muted-foreground">
+                      <DollarSign size={32} className="opacity-20" />
+                      <p className="text-sm">لا توجد أرباح معلقة في الوقت الحالي</p>
+                    </div>
                   ) : (
                     <div className="overflow-x-auto">
                       <Table>
@@ -1413,8 +1482,9 @@ export default function AdminPage() {
                             <TableHead className="text-xs">المؤجر</TableHead>
                             <TableHead className="text-xs">الهاتف</TableHead>
                             <TableHead className="text-xs">التوثيق</TableHead>
-                            <TableHead className="text-xs">الإيجارات المكتملة</TableHead>
+                            <TableHead className="text-xs text-center">الإيجارات</TableHead>
                             <TableHead className="text-xs text-right">رصيد الأرباح</TableHead>
+                            <TableHead className="text-xs text-center">الإجراء</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1429,6 +1499,30 @@ export default function AdminPage() {
                               </TableCell>
                               <TableCell className="text-xs text-center">{String(o.completed_rentals)}</TableCell>
                               <TableCell className="text-xs text-right font-bold text-primary">{fmt(o.earnings_balance as number)} دج</TableCell>
+                              <TableCell className="text-center">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                                  disabled={payoutNotifying === String(o.id)}
+                                  onClick={async () => {
+                                    setPayoutNotifying(String(o.id));
+                                    try {
+                                      const r = await api.post<{ message: string }>(`/api/admin/payout/notify/${o.id}`);
+                                      toast.success(r.message || 'تم إرسال التنبيه');
+                                    } catch (err: unknown) {
+                                      toast.error((err as Error).message || 'فشل إرسال التنبيه');
+                                    } finally {
+                                      setPayoutNotifying(null);
+                                    }
+                                  }}
+                                >
+                                  {payoutNotifying === String(o.id)
+                                    ? <><Loader2 size={11} className="animate-spin" /> جارٍ...</>
+                                    : <><Bell size={11} /> تنبيه بالسحب</>
+                                  }
+                                </Button>
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -1438,7 +1532,7 @@ export default function AdminPage() {
                 </CardContent>
               </Card>
               <p className="text-xs text-muted-foreground text-center">
-                لمعالجة المدفوعات، انتقل إلى تبويب "طلبات السحب"
+                لمعالجة طلبات السحب المقدَّمة، انتقل إلى تبويب <span className="font-semibold">طلبات السحب</span>
               </p>
             </div>
           </TabsContent>

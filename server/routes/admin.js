@@ -249,7 +249,7 @@ router.post('/notifications/broadcast', requireAdmin, async (req, res) => {
 });
 
 /* ─────────────────────────────────────────────
-   GET /api/admin/financials — daily/weekly/monthly platform revenue
+   GET /api/admin/financials — full financial dashboard data
 ───────────────────────────────────────────── */
 router.get('/financials', requireAdmin, async (req, res) => {
   try {
@@ -258,11 +258,12 @@ router.get('/financials', requireAdmin, async (req, res) => {
       { rows: monthly },
       { rows: topOwners },
       { rows: rentalStats },
+      { rows: [kpis] },
     ] = await Promise.all([
       pool.query(`
         SELECT
           date_trunc('day', created_at) AS day,
-          SUM(CASE WHEN type='platform_fee' THEN amount ELSE 0 END) AS platform_fee,
+          COALESCE(SUM(CASE WHEN type='platform_fee' THEN amount ELSE 0 END),0) AS platform_fee,
           COUNT(*) AS count
         FROM platform_ledger
         WHERE created_at > now() - interval '30 days'
@@ -271,7 +272,7 @@ router.get('/financials', requireAdmin, async (req, res) => {
       pool.query(`
         SELECT
           date_trunc('month', created_at) AS month,
-          SUM(CASE WHEN type='platform_fee' THEN amount ELSE 0 END) AS platform_fee,
+          COALESCE(SUM(CASE WHEN type='platform_fee' THEN amount ELSE 0 END),0) AS platform_fee,
           COUNT(*) AS count
         FROM platform_ledger
         WHERE created_at > now() - interval '12 months'
@@ -279,7 +280,7 @@ router.get('/financials', requireAdmin, async (req, res) => {
       `),
       pool.query(`
         SELECT p.name, p.id,
-          SUM(r.net_earnings) AS total_earnings,
+          COALESCE(SUM(r.net_earnings),0) AS total_earnings,
           COUNT(r.id) AS rentals_count
         FROM rentals r
         JOIN profiles p ON p.id = r.owner_id
@@ -295,11 +296,115 @@ router.get('/financials', requireAdmin, async (req, res) => {
         FROM rentals
         GROUP BY status
       `),
+      pool.query(`
+        SELECT
+          COALESCE((SELECT SUM(amount) FROM platform_ledger WHERE type='platform_fee'),0)                                                AS total_revenue,
+          COALESCE((SELECT SUM(amount) FROM platform_ledger WHERE type='platform_fee' AND created_at > now()-interval '1 day'),0)      AS daily_revenue,
+          COALESCE((SELECT SUM(amount) FROM platform_ledger WHERE type='platform_fee' AND created_at > now()-interval '7 days'),0)     AS weekly_revenue,
+          COALESCE((SELECT SUM(amount) FROM platform_ledger WHERE type='platform_fee' AND created_at > now()-interval '30 days'),0)    AS monthly_revenue,
+          COALESCE((SELECT SUM(amount) FROM platform_ledger WHERE type='platform_fee' AND created_at > now()-interval '365 days'),0)   AS yearly_revenue,
+          COALESCE((SELECT SUM(amount) FROM ledger WHERE type='rental_payment'),0)                                                     AS total_rental_volume,
+          COALESCE((SELECT SUM(amount) FROM ledger WHERE type='late_penalty'),0)                                                       AS total_penalties,
+          COALESCE((SELECT SUM(frozen_balance) FROM profiles),0)                                                                       AS total_frozen,
+          (SELECT COUNT(*) FROM rentals WHERE status='completed')                                                                      AS completed_rentals,
+          (SELECT COUNT(*) FROM rentals WHERE status IN ('active','late'))                                                             AS active_rentals,
+          (SELECT COUNT(*) FROM profiles WHERE is_admin=false)                                                                         AS total_users
+      `),
     ]);
-    res.json({ daily, monthly, topOwners, rentalStats });
+    res.json({
+      daily,
+      monthly,
+      topOwners,
+      rentalStats,
+      kpis: {
+        totalRevenue:     parseFloat(kpis.total_revenue),
+        dailyRevenue:     parseFloat(kpis.daily_revenue),
+        weeklyRevenue:    parseFloat(kpis.weekly_revenue),
+        monthlyRevenue:   parseFloat(kpis.monthly_revenue),
+        yearlyRevenue:    parseFloat(kpis.yearly_revenue),
+        totalRentalVolume:parseFloat(kpis.total_rental_volume),
+        totalPenalties:   parseFloat(kpis.total_penalties),
+        totalFrozen:      parseFloat(kpis.total_frozen),
+        completedRentals: parseInt(kpis.completed_rentals),
+        activeRentals:    parseInt(kpis.active_rentals),
+        totalUsers:       parseInt(kpis.total_users),
+      },
+    });
   } catch (e) {
-    console.error(e);
+    console.error('[Admin Financials]', e);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/* ─────────────────────────────────────────────
+   POST /api/admin/payout/notify/:userId
+   Sends a push notification to the owner to submit a withdrawal request.
+───────────────────────────────────────────── */
+router.post('/payout/notify/:userId', requireAdmin, async (req, res) => {
+  try {
+    const { rows: [profile] } = await pool.query(
+      `SELECT name, earnings_balance FROM profiles WHERE id=$1`, [req.params.userId]
+    );
+    if (!profile) return res.status(404).json({ error: 'User not found' });
+    const earnings = parseFloat(profile.earnings_balance) || 0;
+    if (earnings <= 0) return res.status(400).json({ error: 'No earnings to notify' });
+    await pool.query(
+      `INSERT INTO notifications (user_id, title, body, type) VALUES ($1,$2,$3,'admin')`,
+      [
+        req.params.userId,
+        '💸 أرباحك جاهزة للسحب',
+        `لديك ${earnings.toLocaleString('ar-DZ')} دج أرباح جاهزة. توجه إلى صفحة المحفظة وقدم طلب سحب الآن.`,
+      ]
+    );
+    res.json({ ok: true, message: `تم إرسال تنبيه لـ ${profile.name}` });
+  } catch (e) {
+    console.error('[Payout Notify]', e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/* ─────────────────────────────────────────────
+   POST /api/admin/payout/direct/:userId
+   Admin directly records a manual payout — deducts earnings_balance + notifies.
+───────────────────────────────────────────── */
+router.post('/payout/direct/:userId', requireAdmin, async (req, res) => {
+  const { amount, note } = req.body;
+  const amountNum = parseFloat(amount);
+  if (!amountNum || amountNum <= 0) return res.status(400).json({ error: 'Invalid amount' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [profile] } = await client.query(
+      `SELECT name, earnings_balance FROM profiles WHERE id=$1 FOR UPDATE`, [req.params.userId]
+    );
+    if (!profile) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'User not found' }); }
+    const earnings = parseFloat(profile.earnings_balance) || 0;
+    if (earnings < amountNum) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Insufficient earnings' }); }
+    await client.query(
+      `UPDATE profiles SET earnings_balance = earnings_balance - $1 WHERE id=$2`, [amountNum, req.params.userId]
+    );
+    await client.query(
+      `INSERT INTO withdrawal_requests (user_id, user_name, phone, ccp_number, amount, status)
+       SELECT p.id, p.name, p.phone, 'ADMIN_DIRECT', $1, 'processed'
+       FROM profiles p WHERE p.id=$2`,
+      [amountNum, req.params.userId]
+    );
+    await client.query(
+      `INSERT INTO notifications (user_id, title, body, type) VALUES ($1,$2,$3,'admin')`,
+      [
+        req.params.userId,
+        '✅ تم تأكيد صرف أرباحك',
+        `تم صرف ${amountNum.toLocaleString('ar-DZ')} دج من أرباحك يدوياً بواسطة الإدارة.${note ? ` ملاحظة: ${note}` : ''}`,
+      ]
+    );
+    await client.query('COMMIT');
+    res.json({ ok: true, message: `تم صرف ${amountNum.toLocaleString('ar-DZ')} دج لـ ${profile.name}` });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('[Payout Direct]', e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
   }
 });
 

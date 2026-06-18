@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Wallet, TrendingUp, PlusCircle, ArrowDownCircle, ArrowUpCircle, Lock, ExternalLink, Loader2, CheckCircle2, Clock, XCircle, CreditCard, RefreshCw } from 'lucide-react';
+import { Wallet, TrendingUp, PlusCircle, ArrowDownCircle, ArrowUpCircle, Lock, ExternalLink, Loader2, CheckCircle2, Clock, XCircle, CreditCard, RefreshCw, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -44,6 +44,7 @@ export default function WalletPage() {
   const [loading, setLoading] = useState(false);
   const [txLoading, setTxLoading] = useState(true);
   const [topUpTx, setTopUpTx] = useState<TxRow[]>([]);
+  const [depositReleasing, setDepositReleasing] = useState<string | null>(null);
 
   /* ── جلب المعاملات الحقيقية من قاعدة البيانات ── */
   const fetchTransactions = async () => {
@@ -181,6 +182,25 @@ export default function WalletPage() {
     toast.success(t('withdrawalSubmitted'));
   };
 
+  /* ── ضمانات المستأجر المجمدة ── */
+  const frozenDeposits = rentals.filter(
+    r => r.renterId === user.id && r.depositAmount > 0 && r.status === 'completed'
+  );
+
+  const handleReleaseDeposit = async (rentalId: string) => {
+    setDepositReleasing(rentalId);
+    try {
+      const res = await api.post<{ message: string }>(`/api/rentals/${rentalId}/release-deposit`);
+      toast.success(res.message || 'تم إفراج الضمان وإضافته لمحفظتك ✅');
+      const rental = frozenDeposits.find(r => r.id === rentalId);
+      if (rental) updateUser({ walletBalance: user.walletBalance + rental.depositAmount });
+    } catch (err: unknown) {
+      toast.error((err as Error).message || 'فشل إفراج الضمان');
+    } finally {
+      setDepositReleasing(null);
+    }
+  };
+
   /* ── أرباح المؤجر من الإيجارات المكتملة ── */
   const completedOwnerRentals = rentals.filter(r => r.ownerId === user.id && r.status === 'completed');
   const earningsDetails = completedOwnerRentals.map(r => ({
@@ -298,6 +318,70 @@ export default function WalletPage() {
                   </tbody>
                 </table>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── ضماناتي — الضمانات المجمدة ── */}
+        {frozenDeposits.length > 0 && (
+          <Card className="border-amber-400/30">
+            <CardHeader className="pb-2">
+              <div className={cn('flex items-center gap-2', isRTL ? 'flex-row-reverse' : '')}>
+                <ShieldCheck size={16} className="text-amber-600" />
+                <CardTitle className="text-base">ضماناتي</CardTitle>
+                <Badge variant="outline" className="text-xs border-amber-400/50 text-amber-700">
+                  {frozenDeposits.length}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                الضمانات تُحرَّر تلقائياً بعد 48 ساعة من انتهاء الإيجار. يمكنك طلب الإفراج يدوياً إذا كانت المدة قد مضت.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {frozenDeposits.map(r => {
+                const completedAt = new Date(r.actualEndAt || r.endTime || r.createdAt);
+                const releaseAt = new Date(completedAt.getTime() + 48 * 3600 * 1000);
+                const canRelease = Date.now() >= releaseAt.getTime();
+                return (
+                  <div
+                    key={r.id}
+                    className={cn(
+                      'flex items-center gap-3 p-3 rounded-xl border',
+                      canRelease ? 'border-green-400/40 bg-green-500/5' : 'border-amber-400/30 bg-amber-500/5',
+                      isRTL ? 'flex-row-reverse' : ''
+                    )}
+                  >
+                    <div className={cn(
+                      'w-10 h-10 rounded-full flex items-center justify-center shrink-0',
+                      canRelease ? 'bg-green-500/10' : 'bg-amber-500/10'
+                    )}>
+                      <ShieldCheck size={18} className={canRelease ? 'text-green-600' : 'text-amber-600'} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{r.productTitle}</p>
+                      <p className="text-xs text-muted-foreground">
+                        مبلغ الضمان: <span className="font-semibold text-amber-700">{fmt(r.depositAmount)} {t('dz')}</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {canRelease
+                          ? 'جاهز للإفراج ✅'
+                          : `يُفرج تلقائياً: ${releaseAt.toLocaleString('ar-DZ', { dateStyle: 'short', timeStyle: 'short' })}`}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={canRelease ? 'default' : 'outline'}
+                      className={cn('shrink-0 gap-1 text-xs', !canRelease && 'opacity-60')}
+                      disabled={!!depositReleasing || !canRelease}
+                      onClick={() => handleReleaseDeposit(r.id)}
+                    >
+                      {depositReleasing === r.id
+                        ? <><Loader2 size={12} className="animate-spin" /> جارٍ...</>
+                        : canRelease ? 'استرداد الضمان' : 'مجمد'}
+                    </Button>
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
         )}
