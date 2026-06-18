@@ -177,11 +177,24 @@ export default function ProductDetailPage() {
 
   const isOwner = user?.id === product.ownerId;
   const days = hours / 24;
-  const totalCost = pricing?.totalCharge ?? (product.rentalPrice * days + product.deposit);
-  const commission = pricing?.platformFee ?? (product.rentalPrice * days * (product.commissionRate / 100));
-  const net = pricing?.ownerShare ?? (product.rentalPrice * days - commission);
-  const depositAmount = pricing?.depositAmount ?? product.deposit;
-  const rentalFee = pricing?.totalRentalFee ?? (product.rentalPrice * days);
+
+  let totalCost = 0;
+  let commission = 0;
+  let net = 0;
+  let depositAmount = 0;
+  let rentalFee = 0;
+  try {
+    const rentalPrice = Number(product?.rentalPrice || 0);
+    const deposit = Number(product?.deposit || 0);
+    const commissionRate = Number(product?.commissionRate || 10);
+    rentalFee = pricing?.totalRentalFee ?? (rentalPrice * days);
+    depositAmount = pricing?.depositAmount ?? deposit;
+    commission = pricing?.platformFee ?? (rentalPrice * days * (commissionRate / 100));
+    net = pricing?.ownerShare ?? (rentalPrice * days - commission);
+    totalCost = pricing?.totalCharge ?? (rentalPrice * days + deposit);
+  } catch (e) {
+    console.error('[ProductDetail] pricing calc error:', e);
+  }
 
   const handleRentNow = () => {
     if (!user) { navigate('/login'); return; }
@@ -217,7 +230,7 @@ export default function ProductDetailPage() {
     }
   };
 
-  const fmt = (n: number) => n.toLocaleString('ar-DZ');
+  const fmt = (n: unknown) => { try { return Number(n || 0).toLocaleString('ar-DZ'); } catch { return '0'; } };
 
   return (
     <AppLayout>
@@ -266,8 +279,8 @@ export default function ProductDetailPage() {
                 </span>
                 <span className={cn('flex items-center gap-1', isRTL ? 'flex-row-reverse' : '')}>
                   <Star size={13} className="fill-yellow-400 text-yellow-400" />
-                  {product.rating > 0 ? product.rating.toFixed(1) : 'جديد'}
-                  {product.reviewCount > 0 && ` (${product.reviewCount})`}
+                  {Number(product?.rating || 0) > 0 ? Number(product.rating).toFixed(1) : 'جديد'}
+                  {Number(product?.reviewCount || 0) > 0 && ` (${product.reviewCount})`}
                 </span>
                 <span className={cn('flex items-center gap-1', isRTL ? 'flex-row-reverse' : '')}>
                   <Calendar size={13} /> {product.purchaseYear}
@@ -303,9 +316,9 @@ export default function ProductDetailPage() {
                     <div className={cn('flex items-center gap-2 text-xs text-muted-foreground', isRTL ? 'flex-row-reverse' : '')}>
                       <span className={cn('flex items-center gap-1', isRTL ? 'flex-row-reverse' : '')}>
                         <Star size={11} className="fill-yellow-400 text-yellow-400" />
-                        {product.ownerRating.toFixed(1)}
+                        {Number(product?.ownerRating || 0).toFixed(1)}
                       </span>
-                      <span>{product.ownerTotalRentals} {t('totalRentals')}</span>
+                      <span>{Number(product?.ownerTotalRentals || 0)} {t('totalRentals')}</span>
                     </div>
                   </div>
                   {/* سعر الشراء — للمالك والإدارة فقط */}
@@ -388,7 +401,7 @@ export default function ProductDetailPage() {
                     />
                     <PriceRow label={`${t('deposit')} (مُسترجعة)`} value={`${fmt(depositAmount)} ${t('dz')}`} />
                     {isOwner && (
-                      <PriceRow label={`عمولة المنصة (${Math.round((pricing?.commissionRate ?? product.commissionRate / 100) * 100)}%)`} value={`- ${fmt(Math.round(commission))} ${t('dz')}`} muted />
+                      <PriceRow label={`عمولة المنصة (${Math.round((pricing?.commissionRate ?? Number(product?.commissionRate || 10) / 100) * 100)}%)`} value={`- ${fmt(Math.round(commission))} ${t('dz')}`} muted />
                     )}
                     <PriceRow label={t('totalCost')} value={`${fmt(Math.round(totalCost))} ${t('dz')}`} primary />
                     {isOwner && (
@@ -442,7 +455,7 @@ export default function ProductDetailPage() {
                   <span>{fmt(Math.round(rentalFee))} {t('dz')}</span>
                 </div>
                 <div className={cn('flex justify-between text-destructive', isRTL ? 'flex-row-reverse' : '')}>
-                  <span>عمولة المنصة ({Math.round((pricing?.commissionRate ?? product.commissionRate / 100) * 100)}%)</span>
+                  <span>عمولة المنصة ({Math.round((pricing?.commissionRate ?? Number(product?.commissionRate || 10) / 100) * 100)}%)</span>
                   <span>- {fmt(Math.round(commission))} {t('dz')}</span>
                 </div>
                 <div className={cn('flex justify-between text-green-600 dark:text-green-400 font-medium border-t border-border pt-1', isRTL ? 'flex-row-reverse' : '')}>

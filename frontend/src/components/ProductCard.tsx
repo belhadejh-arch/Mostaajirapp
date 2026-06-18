@@ -47,14 +47,14 @@ export function ProductCard({ product, className }: ProductCardProps) {
           </div>
           <div className="mt-auto flex items-center justify-between gap-2">
             <span className="text-primary font-bold text-sm whitespace-nowrap">
-              {product.rentalPrice.toLocaleString()} {t('dz')}
+              {Number(product?.rentalPrice || 0).toLocaleString()} {t('dz')}
               <span className="text-xs font-normal text-muted-foreground"> {t('perDay')}</span>
             </span>
-            {product.ownerRating > 0 && (
+            {Number(product?.ownerRating || 0) > 0 && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
                 <Star size={11} className="fill-yellow-400 text-yellow-400" />
-                {product.ownerRating.toFixed(1)}
-                <span className="text-[10px]">({product.ownerTotalRentals})</span>
+                {Number(product.ownerRating).toFixed(1)}
+                <span className="text-[10px]">({Number(product?.ownerTotalRentals || 0)})</span>
               </span>
             )}
           </div>

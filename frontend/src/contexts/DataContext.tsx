@@ -23,7 +23,7 @@ interface DataContextType {
   updateProduct: (productId: string, updates: Partial<Product>) => Promise<void>;
   toggleHideProduct: (productId: string) => Promise<void>;
   deleteProduct: (productId: string) => Promise<void>;
-  createRental: (params: { productId: string; durationDays: number; renterId: string; renterName: string; renterPhone: string; renterAddress: string; renterWilaya: string; selfPickup: boolean; }) => Promise<string>;
+  createRental: (params: { productId: string; durationHours?: number; durationDays?: number; renterId: string; renterName: string; renterPhone: string; renterAddress: string; renterWilaya: string; selfPickup: boolean; }) => Promise<string>;
   updateRentalStatus: (rentalId: string, status: RentalStatus) => Promise<void>;
   acceptRental: (rentalId: string) => Promise<void>;
   rejectRental: (rentalId: string) => Promise<void>;
@@ -46,6 +46,10 @@ interface DataContextType {
 const DataContext = createContext<DataContextType | null>(null);
 
 function rowToProduct(row: Record<string, unknown>): Product {
+  const n = (v: unknown, fallback = 0) => {
+    const num = Number(v);
+    return Number.isFinite(num) ? num : fallback;
+  };
   return {
     id: row.id as string,
     title: (row.title as string) || '',
@@ -54,17 +58,17 @@ function rowToProduct(row: Record<string, unknown>): Product {
     videoUri: row.video_uri as string | undefined,
     categoryId: (row.category_id as string) || '',
     subcategoryId: (row.subcategory_id as string) || '',
-    wilayaCode: (row.wilaya_code as number) || 16,
+    wilayaCode: n(row.wilaya_code, 16),
     wilayaName: (row.wilaya_name as string) || '',
-    purchasePrice: (row.purchase_price as number) || 0,
-    purchaseYear: (row.purchase_year as number) || 2020,
-    rentalPrice: (row.rental_price as number) || 0,
-    deposit: (row.deposit as number) || 0,
-    commissionRate: (row.commission_rate as number) || 10,
+    purchasePrice: n(row.purchase_price),
+    purchaseYear: n(row.purchase_year, 2020),
+    rentalPrice: n(row.rental_price),
+    deposit: n(row.deposit),
+    commissionRate: n(row.commission_rate, 10),
     deliveryAvailable: (row.delivery_available as boolean) || false,
     status: (row.status as Product['status']) || 'available',
-    stockQuantity: (row.stock_quantity as number) || 1,
-    availableQuantity: (row.available_quantity as number) || 1,
+    stockQuantity: n(row.stock_quantity, 1),
+    availableQuantity: n(row.available_quantity, 1),
     isHidden: (row.is_hidden as boolean) || false,
     isFrozen: (row.is_frozen as boolean) || false,
     removalReason: row.removal_reason as string | undefined,
@@ -75,20 +79,21 @@ function rowToProduct(row: Record<string, unknown>): Product {
     ownerAvatarUri: row.owner_avatar_uri as string | undefined,
     ownerPhone: row.owner_phone as string | undefined,
     ownerAddress: row.owner_address as string | undefined,
-    ownerWilayaCode: (row.owner_wilaya_code as number) || undefined,
+    ownerWilayaCode: row.owner_wilaya_code != null ? n(row.owner_wilaya_code) : undefined,
     ownerWilayaName: row.owner_wilaya_name as string | undefined,
-    ownerRating: (row.owner_rating as number) || 0,
-    ownerReviewCount: (row.owner_review_count as number) || 0,
-    ownerTotalRentals: (row.owner_total_rentals as number) || 0,
-    totalRentals: (row.total_rentals as number) || 0,
-    rating: (row.rating as number) || 0,
-    reviewCount: (row.review_count as number) || 0,
+    ownerRating: n(row.owner_rating),
+    ownerReviewCount: n(row.owner_review_count),
+    ownerTotalRentals: n(row.owner_total_rentals),
+    totalRentals: n(row.total_rentals),
+    rating: n(row.rating),
+    reviewCount: n(row.review_count),
     createdAt: (row.created_at as string) || new Date().toISOString(),
   };
 }
 
 function rowToRental(row: Record<string, unknown>): Rental {
-  const durationHours = (row.duration_hours as number) || ((row.duration_days as number) || 1) * 24;
+  const n = (v: unknown, fallback = 0) => { const num = Number(v); return Number.isFinite(num) ? num : fallback; };
+  const durationHours = n(row.duration_hours) || (n(row.duration_days, 1) * 24);
   return {
     id: row.id as string,
     productId: (row.product_id as string) || '',
@@ -105,17 +110,17 @@ function rowToRental(row: Record<string, unknown>): Rental {
     startTime: (row.start_time as string) || (row.started_at as string) || undefined,
     endTime: (row.end_time as string) || (row.actual_end_at as string) || undefined,
     durationHours,
-    durationDays: (row.duration_days as number) || Math.ceil(durationHours / 24),
-    dailyRate: (row.daily_rate as number) || 0,
-    rentalFee: (row.rental_fee as number) || (row.total_amount as number) || 0,
-    platformFee: (row.platform_fee as number) || (row.commission_amount as number) || 0,
-    depositAmount: (row.deposit_amount as number) || (row.deposit as number) || 0,
-    deposit: (row.deposit as number) || (row.deposit_amount as number) || 0,
-    commissionAmount: (row.commission_amount as number) || 0,
-    netEarnings: (row.net_earnings as number) || 0,
-    totalAmount: (row.total_amount as number) || 0,
-    escrowAmount: (row.escrow_amount as number) || 0,
-    latePenalty: (row.late_penalty as number) || 0,
+    durationDays: n(row.duration_days) || Math.ceil(durationHours / 24),
+    dailyRate: n(row.daily_rate),
+    rentalFee: n(row.rental_fee) || n(row.total_amount),
+    platformFee: n(row.platform_fee) || n(row.commission_amount),
+    depositAmount: n(row.deposit_amount) || n(row.deposit),
+    deposit: n(row.deposit) || n(row.deposit_amount),
+    commissionAmount: n(row.commission_amount),
+    netEarnings: n(row.net_earnings),
+    totalAmount: n(row.total_amount),
+    escrowAmount: n(row.escrow_amount),
+    latePenalty: n(row.late_penalty),
     status: (row.status as RentalStatus) || 'pending_owner',
     pickupQrCode: (row.pickup_qr_code as string) || '',
     returnQrCode: (row.return_qr_code as string) || '',
