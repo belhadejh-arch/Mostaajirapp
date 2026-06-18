@@ -410,11 +410,18 @@ export default function ProductDetailPage() {
                   </div>
                 )}
 
-                {/* إشعار التجميد */}
-                <div className="flex items-start gap-2 text-xs text-amber-600 bg-amber-500/10 rounded-lg p-2">
-                  <ShieldCheck size={13} className="shrink-0 mt-0.5" />
-                  <span>الضمان يُجمّد من رصيدك ويُعاد تلقائياً بعد 48 ساعة من إغلاق الإيجار</span>
-                </div>
+                {/* إشعار الضمان */}
+                {depositAmount > 0 && !isOwner && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-semibold text-xs">
+                      <ShieldCheck size={13} className="shrink-0" />
+                      ضمان المستأجر: {fmt(depositAmount)} {t('dz')}
+                    </div>
+                    <p className="text-[11px] text-amber-600 dark:text-amber-500 leading-relaxed">
+                      مبلغ الضمان يُجمَّد في رصيدك عند تأكيد الطلب. عند انتهاء المدة وتسليم الشيء في حالته الجيدة وفي الوقت المحدد، يمكنك سحب الضمان خلال 48 ساعة — أو يُضاف تلقائياً لرصيدك للاستخدام في إيجارات أخرى.
+                    </p>
+                  </div>
+                )}
 
                 {!isOwner ? (
                   <Button
@@ -463,8 +470,8 @@ export default function ProductDetailPage() {
                   <span>{fmt(Math.round(net))} {t('dz')}</span>
                 </div>
                 {depositAmount > 0 && (
-                  <div className={cn('flex justify-between text-muted-foreground border-t border-border pt-1', isRTL ? 'flex-row-reverse' : '')}>
-                    <span>{t('deposit')} (مُسترجعة)</span>
+                  <div className={cn('flex justify-between text-amber-600 dark:text-amber-500 border-t border-border pt-1', isRTL ? 'flex-row-reverse' : '')}>
+                    <span className="flex items-center gap-1"><ShieldCheck size={11} /> ضمان مجمد (مُسترجع)</span>
                     <span>{fmt(depositAmount)} {t('dz')}</span>
                   </div>
                 )}
@@ -473,6 +480,15 @@ export default function ProductDetailPage() {
                   <span>{fmt(Math.round(totalCost))} {t('dz')}</span>
                 </div>
               </div>
+              {/* ملاحظة الضمان في المودال */}
+              {depositAmount > 0 && (
+                <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-2.5 text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed flex items-start gap-1.5">
+                  <ShieldCheck size={13} className="shrink-0 mt-0.5" />
+                  <span>
+                    ضمان {fmt(depositAmount)} {t('dz')} يُجمَّد في رصيدك الآن. بعد انتهاء الإيجار وتسليم الشيء بحالته الجيدة، يمكنك سحبه خلال 48 ساعة أو يُضاف تلقائياً لرصيدك.
+                  </span>
+                </div>
+              )}
               {/* بيانات المؤجر الكاملة — شفافية كاملة */}
               <div className="border-t border-border pt-2 space-y-1">
                 <p className="text-xs font-semibold text-foreground">بيانات المؤجر:</p>

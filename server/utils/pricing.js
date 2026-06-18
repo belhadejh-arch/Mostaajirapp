@@ -4,13 +4,19 @@
  * based on product purchase price category.
  */
 
+/*
+ * Deposit is paid ONLY by the RENTER and frozen in their frozen_balance.
+ * It is returned to the renter after successful rental completion:
+ *   - Renter can manually request withdrawal within 48h
+ *   - Auto-released to renter's wallet_balance after 48h if not withdrawn
+ */
 const PRICE_TIERS = [
-  { min: 0,      max: 19999,  rate24h: 800,  deposit: 0,    commission: 0.10 },
-  { min: 20000,  max: 49999,  rate24h: 1100, deposit: 1000, commission: 0.10 },
-  { min: 50000,  max: 99999,  rate24h: 2000, deposit: 3500, commission: 0.15 },
-  { min: 100000, max: 299999, rate24h: 2000, deposit: 3500, commission: 0.15 },
-  { min: 300000, max: 499999, rate24h: 2500, deposit: 4000, commission: 0.20 },
-  { min: 500000, max: Infinity,rate24h:3500, deposit: 4000, commission: 0.30 },
+  { min: 500,    max: 19999,  rate24h: 800,  deposit: 1500,  commission: 0.10 },
+  { min: 20000,  max: 49999,  rate24h: 1100, deposit: 2000,  commission: 0.10 },
+  { min: 50000,  max: 99999,  rate24h: 2000, deposit: 3500,  commission: 0.15 },
+  { min: 100000, max: 299999, rate24h: 2000, deposit: 4000,  commission: 0.20 },
+  { min: 300000, max: 499999, rate24h: 2500, deposit: 5000,  commission: 0.20 },
+  { min: 500000, max: 1000000,rate24h: 3500, deposit: 10000, commission: 0.30 },
 ];
 
 /**
@@ -72,4 +78,4 @@ function getHourOptions() {
   return options;
 }
 
-module.exports = { calculateRentalDetails, getTier, getHourOptions };
+module.exports = { calculateRentalDetails, getTier, getHourOptions, PRICE_TIERS };

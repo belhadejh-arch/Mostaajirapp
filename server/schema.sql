@@ -107,6 +107,10 @@ CREATE TABLE IF NOT EXISTS withdrawal_requests (
 );
 
 -- Rentals
+-- NOTE: Deposit is paid ONLY by the RENTER and frozen in their frozen_balance.
+--       It is released back to the renter after rental completion:
+--         • Renter can manually withdraw within 48h (via /release-deposit)
+--         • Auto-transferred to renter wallet_balance after 48h by cron
 CREATE TABLE IF NOT EXISTS rentals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   product_id UUID NOT NULL REFERENCES products(id),
@@ -122,8 +126,12 @@ CREATE TABLE IF NOT EXISTS rentals (
   self_pickup BOOLEAN NOT NULL DEFAULT false,
   start_time TIMESTAMPTZ,
   end_time TIMESTAMPTZ,
+  duration_hours INTEGER NOT NULL DEFAULT 24,
   duration_days INTEGER NOT NULL DEFAULT 1,
-  daily_rate NUMERIC NOT NULL,
+  daily_rate NUMERIC NOT NULL DEFAULT 0,
+  rental_fee NUMERIC NOT NULL DEFAULT 0,
+  platform_fee NUMERIC NOT NULL DEFAULT 0,
+  deposit_amount NUMERIC NOT NULL DEFAULT 0,
   deposit NUMERIC NOT NULL DEFAULT 0,
   commission_amount NUMERIC NOT NULL DEFAULT 0,
   net_earnings NUMERIC NOT NULL DEFAULT 0,
@@ -131,6 +139,8 @@ CREATE TABLE IF NOT EXISTS rentals (
   escrow_amount NUMERIC NOT NULL DEFAULT 0,
   late_penalty NUMERIC NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'pending_owner',
+  pickup_qr_code TEXT NOT NULL DEFAULT '',
+  return_qr_code TEXT NOT NULL DEFAULT '',
   qr_code_delivery TEXT NOT NULL DEFAULT '',
   qr_code_return TEXT NOT NULL DEFAULT '',
   handover_token TEXT,
@@ -278,3 +288,35 @@ CREATE INDEX IF NOT EXISTS idx_rentals_status ON rentals(status);
 CREATE INDEX IF NOT EXISTS idx_rentals_created_at ON rentals(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
+
+-- Renter & Platform Financial Ledger
+CREATE TABLE IF NOT EXISTS ledger (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  rental_id UUID REFERENCES rentals(id) ON DELETE SET NULL,
+  type TEXT NOT NULL,
+  amount NUMERIC NOT NULL DEFAULT 0,
+  balance_after NUMERIC NOT NULL DEFAULT 0,
+  description TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ledger_user_id ON ledger(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ledger_rental_id ON ledger(rental_id);
+
+CREATE TABLE IF NOT EXISTS platform_ledger (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  rental_id UUID REFERENCES rentals(id) ON DELETE SET NULL,
+  type TEXT NOT NULL,
+  amount NUMERIC NOT NULL DEFAULT 0,
+  description TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_platform_ledger_rental ON platform_ledger(rental_id);
+
+-- Safe column additions for rentals (idempotent)
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS duration_hours INTEGER NOT NULL DEFAULT 24;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS rental_fee NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS platform_fee NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS deposit_amount NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS pickup_qr_code TEXT NOT NULL DEFAULT '';
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS return_qr_code TEXT NOT NULL DEFAULT '';
