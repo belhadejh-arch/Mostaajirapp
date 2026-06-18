@@ -248,4 +248,189 @@ router.post('/notifications/broadcast', requireAdmin, async (req, res) => {
   }
 });
 
+/* ─────────────────────────────────────────────
+   GET /api/admin/financials — daily/weekly/monthly platform revenue
+───────────────────────────────────────────── */
+router.get('/financials', requireAdmin, async (req, res) => {
+  try {
+    const [
+      { rows: daily },
+      { rows: monthly },
+      { rows: topOwners },
+      { rows: rentalStats },
+    ] = await Promise.all([
+      pool.query(`
+        SELECT
+          date_trunc('day', created_at) AS day,
+          SUM(CASE WHEN type='platform_fee' THEN amount ELSE 0 END) AS platform_fee,
+          COUNT(*) AS count
+        FROM platform_ledger
+        WHERE created_at > now() - interval '30 days'
+        GROUP BY 1 ORDER BY 1
+      `),
+      pool.query(`
+        SELECT
+          date_trunc('month', created_at) AS month,
+          SUM(CASE WHEN type='platform_fee' THEN amount ELSE 0 END) AS platform_fee,
+          COUNT(*) AS count
+        FROM platform_ledger
+        WHERE created_at > now() - interval '12 months'
+        GROUP BY 1 ORDER BY 1
+      `),
+      pool.query(`
+        SELECT p.name, p.id,
+          SUM(r.net_earnings) AS total_earnings,
+          COUNT(r.id) AS rentals_count
+        FROM rentals r
+        JOIN profiles p ON p.id = r.owner_id
+        WHERE r.status = 'completed'
+        GROUP BY p.id, p.name
+        ORDER BY total_earnings DESC LIMIT 10
+      `),
+      pool.query(`
+        SELECT
+          status,
+          COUNT(*) AS count,
+          COALESCE(SUM(total_amount), 0) AS volume
+        FROM rentals
+        GROUP BY status
+      `),
+    ]);
+    res.json({ daily, monthly, topOwners, rentalStats });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/* ─────────────────────────────────────────────
+   GET /api/admin/payout-alerts — owners with earnings ready to withdraw
+───────────────────────────────────────────── */
+router.get('/payout-alerts', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        p.id, p.name, p.phone, u.email,
+        p.earnings_balance,
+        p.wallet_balance,
+        p.verification_status,
+        COUNT(r.id) AS completed_rentals,
+        MAX(r.actual_end_at) AS last_completion
+      FROM profiles p
+      JOIN users u ON u.id = p.id
+      LEFT JOIN rentals r ON r.owner_id = p.id AND r.status = 'completed'
+      WHERE p.earnings_balance > 0 AND p.is_admin = false
+      GROUP BY p.id, p.name, p.phone, u.email, p.earnings_balance, p.wallet_balance, p.verification_status
+      ORDER BY p.earnings_balance DESC
+    `);
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/* ─────────────────────────────────────────────
+   GET /api/admin/public-profile/:id — public user profile for owner pages
+───────────────────────────────────────────── */
+router.get('/public-profile/:id', async (req, res) => {
+  try {
+    const { rows: [profile] } = await pool.query(
+      `SELECT p.id, p.name, p.owner_avatar_uri, p.owner_wilaya_name, p.owner_wilaya_code,
+              p.verification_status, p.owner_rating, p.owner_review_count, p.total_rentals,
+              p.created_at, u.email
+       FROM profiles p
+       JOIN users u ON u.id = p.id
+       WHERE p.id=$1`,
+      [req.params.id]
+    );
+    if (!profile) return res.status(404).json({ error: 'Not found' });
+
+    const { rows: ratings } = await pool.query(
+      `SELECT or2.rating, or2.comment, or2.created_at,
+              p.name AS renter_name
+       FROM owner_ratings or2
+       JOIN profiles p ON p.id = or2.renter_id
+       WHERE or2.owner_id=$1
+       ORDER BY or2.created_at DESC LIMIT 20`,
+      [req.params.id]
+    );
+
+    const { rows: [completedStats] } = await pool.query(
+      `SELECT COUNT(*) AS completed_count
+       FROM rentals WHERE owner_id=$1 AND status='completed'`,
+      [req.params.id]
+    );
+
+    res.json({ profile, ratings, completedRentals: parseInt(completedStats?.completed_count || 0) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/* ─────────────────────────────────────────────
+   GET /api/admin/backup — export all data as JSON
+───────────────────────────────────────────── */
+router.get('/backup', requireAdmin, async (req, res) => {
+  try {
+    const tables = ['users','profiles','products','rentals','ledger','platform_ledger','notifications','disputes','kyc_requests','withdrawal_requests','owner_ratings'];
+    const backup = { exportedAt: new Date().toISOString(), tables: {} };
+    for (const table of tables) {
+      try {
+        const { rows } = await pool.query(`SELECT * FROM ${table} ORDER BY created_at DESC LIMIT 5000`);
+        backup.tables[table] = rows;
+      } catch { backup.tables[table] = []; }
+    }
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="mostajir-backup-${Date.now()}.json"`);
+    res.json(backup);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/* ─────────────────────────────────────────────
+   POST /api/admin/restore — restore products/rentals from backup JSON
+   Only restores safe non-auth tables
+───────────────────────────────────────────── */
+router.post('/restore', requireAdmin, async (req, res) => {
+  const { tables } = req.body;
+  if (!tables) return res.status(400).json({ error: 'tables object required' });
+  const allowed = ['products', 'rentals', 'disputes', 'owner_ratings'];
+  const restored = {};
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const table of allowed) {
+      if (!tables[table] || !Array.isArray(tables[table])) continue;
+      let count = 0;
+      for (const row of tables[table]) {
+        try {
+          const keys = Object.keys(row);
+          const vals = Object.values(row);
+          const cols = keys.join(',');
+          const placeholders = keys.map((_, i) => `$${i+1}`).join(',');
+          const updates = keys.filter(k => k !== 'id').map((k, i) => `${k}=EXCLUDED.${k}`).join(',');
+          await client.query(
+            `INSERT INTO ${table} (${cols}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updates}`,
+            vals
+          );
+          count++;
+        } catch {}
+      }
+      restored[table] = count;
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, restored });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;

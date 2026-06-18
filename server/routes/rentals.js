@@ -488,8 +488,57 @@ router.post('/cron/auto-late', async (req, res) => {
       );
     }
 
+    /* ── Auto-cancel pending_owner rentals older than 12 hours ── */
+    const { rows: autoCancelled } = await client.query(
+      `UPDATE rentals SET status='cancelled'
+       WHERE status='pending_owner'
+         AND created_at < now() - interval '12 hours'
+       RETURNING id, renter_id, owner_id, product_title, total_amount, deposit_amount, rental_fee`
+    );
+
+    for (const r of autoCancelled) {
+      /* Refund renter: rental fee + deposit back to wallet, unfreeze deposit */
+      const refund = parseFloat(r.total_amount || 0);
+      const deposit = parseFloat(r.deposit_amount || 0);
+      if (refund > 0) {
+        await client.query(
+          `UPDATE profiles SET
+             wallet_balance = wallet_balance + $1,
+             frozen_balance = GREATEST(0, frozen_balance - $2)
+           WHERE id=$3`,
+          [refund, deposit, r.renter_id]
+        );
+        await client.query(
+          `INSERT INTO ledger (user_id, rental_id, type, amount, balance_after, description)
+           SELECT $1, $2, 'refund', $3, wallet_balance, $4
+           FROM profiles WHERE id=$1`,
+          [r.renter_id, r.id, refund, `إلغاء تلقائي: ${r.product_title}`]
+        );
+      }
+      /* Restore product availability */
+      await client.query(
+        `UPDATE products SET
+           available_quantity = LEAST(stock_quantity, available_quantity + 1),
+           status = 'available'
+         WHERE id = (SELECT product_id FROM rentals WHERE id=$1)`,
+        [r.id]
+      );
+      /* Notify both parties */
+      await client.query(
+        `INSERT INTO notifications (user_id, title, body, type) VALUES
+           ($1,$3,$4,'rental'),
+           ($2,$3,$5,'rental')`,
+        [
+          r.renter_id, r.owner_id,
+          '❌ تم إلغاء الطلب تلقائياً',
+          `لم يقبل المؤجر طلب "${r.product_title}" خلال 12 ساعة. تم استرداد مبلغ ${parseFloat(r.total_amount||0).toLocaleString('ar-DZ')} دج إلى محفظتك.`,
+          `انتهت مهلة قبول طلب تأجير "${r.product_title}" (12 ساعة) وتم إلغاؤه تلقائياً.`,
+        ]
+      );
+    }
+
     await client.query('COMMIT');
-    res.json({ lateMarked: lateRentals.length, depositsReleased: toRelease.length });
+    res.json({ lateMarked: lateRentals.length, depositsReleased: toRelease.length, autoCancelled: autoCancelled.length });
   } catch (e) {
     await client.query('ROLLBACK');
     console.error(e);

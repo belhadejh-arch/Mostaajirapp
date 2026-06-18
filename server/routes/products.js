@@ -4,7 +4,52 @@ const { requireAuth } = require('../middleware/auth');
 
 router.get('/', async (req, res) => {
   try {
-    const { rows } = await pool.query(`SELECT * FROM products ORDER BY created_at DESC`);
+    const { page = 1, limit = 100, wilaya, cat, q, sort, ownerId, all } = req.query;
+    const offset = (Number(page) - 1) * Number(limit);
+
+    const conditions = ['1=1'];
+    const params = [];
+
+    if (!all) {
+      conditions.push(`review_status='approved'`);
+      conditions.push(`is_frozen=false`);
+      conditions.push(`is_hidden=false`);
+    }
+    if (ownerId) { params.push(ownerId);       conditions.push(`owner_id=$${params.length}`); }
+    if (cat)     { params.push(cat);           conditions.push(`category_id=$${params.length}`); }
+    if (wilaya)  { params.push(Number(wilaya)); conditions.push(`wilaya_code=$${params.length}`); }
+    if (q)       { params.push(`%${q}%`);      conditions.push(`(title ILIKE $${params.length} OR description ILIKE $${params.length})`); }
+
+    let orderBy = 'created_at DESC';
+    if (sort === 'rating')  orderBy = 'rating DESC, review_count DESC';
+    if (sort === 'rentals') orderBy = 'total_rentals DESC';
+    if (sort === 'newest')  orderBy = 'created_at DESC';
+
+    params.push(Number(limit), offset);
+    const where = conditions.join(' AND ');
+
+    const { rows } = await pool.query(
+      `SELECT * FROM products WHERE ${where} ORDER BY ${orderBy} LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    res.json(rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/* ─────────────────────────────────────────────
+   GET /api/products/public/:ownerId — public owner products
+───────────────────────────────────────────── */
+router.get('/public/:ownerId', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM products
+       WHERE owner_id=$1 AND review_status='approved' AND is_frozen=false AND is_hidden=false
+       ORDER BY created_at DESC LIMIT 50`,
+      [req.params.ownerId]
+    );
     res.json(rows);
   } catch (e) {
     console.error(e);

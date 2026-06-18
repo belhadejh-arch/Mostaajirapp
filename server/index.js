@@ -142,6 +142,11 @@ setInterval(async () => {
   } catch {}
 }, 10 * 60 * 1000);
 
-app.listen(PORT, '0.0.0.0', () => {
+const http = require('http');
+const { initWS } = require('./ws');
+const server = http.createServer(app);
+initWS(server);
+
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`MOSTAJIR API running on port ${PORT}`);
 });

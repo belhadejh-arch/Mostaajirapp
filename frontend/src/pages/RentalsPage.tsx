@@ -258,6 +258,22 @@ function RentalCard({ rental, asOwner }: { rental: Rental; asOwner: boolean }) {
   const [ratingComment, setRatingComment] = useState('');
   const [ratingDone, setRatingDone] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const autoRatingFired = useRef(false);
+
+  /* ── فتح نافذة التقييم تلقائياً بعد إتمام الإعادة (خلال ساعة) ── */
+  useEffect(() => {
+    if (asOwner || ratingDone || autoRatingFired.current) return;
+    if (rental.status !== 'completed') return;
+    const completedAt = (rental as Record<string, unknown>).actualEndAt as string | undefined
+      || (rental as Record<string, unknown>).endTime as string | undefined;
+    if (!completedAt) return;
+    const age = Date.now() - new Date(completedAt).getTime();
+    if (age < 3_600_000) {
+      autoRatingFired.current = true;
+      const t = setTimeout(() => setRatingOpen(true), 1200);
+      return () => clearTimeout(t);
+    }
+  }, [rental.status]);
 
   const fmt = (n: number) => n.toLocaleString('ar-DZ');
   const qrValue = qrType === 'delivery' ? (rental.handoverToken || rental.qrCodeDelivery) : (rental.returnToken || rental.qrCodeReturn);

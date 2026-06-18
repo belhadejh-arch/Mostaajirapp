@@ -26,39 +26,129 @@ function rowToNotif(r: Record<string, unknown>): Notification {
   };
 }
 
+/* ── Play notification sound ── */
+let audioCtx: AudioContext | null = null;
+const playNotificationSound = () => {
+  try {
+    const audio = new Audio('/notification.ogg');
+    audio.volume = 0.6;
+    audio.play().catch(() => {});
+  } catch {}
+};
+
+/* ── Resolve WebSocket URL ── */
+function getWsUrl(token: string): string {
+  const apiBase = (import.meta.env.VITE_API_URL as string) || '';
+  if (apiBase.startsWith('https://')) {
+    const host = apiBase.replace('https://', '');
+    return `wss://${host}/ws?token=${encodeURIComponent(token)}`;
+  }
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const host = window.location.host;
+  return `${proto}://${host}/ws?token=${encodeURIComponent(token)}`;
+}
+
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const prevCountRef = useRef(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(true);
+
+  const handleNewNotifs = useCallback((newNotifs: Notification[]) => {
+    const newUnread = newNotifs.filter(n => !n.read).length;
+    if (newUnread > prevCountRef.current && prevCountRef.current >= 0) {
+      const latest = newNotifs.find(n => !n.read);
+      if (latest) {
+        toast.info(latest.title, { description: latest.body });
+        playNotificationSound();
+      }
+    }
+    prevCountRef.current = newUnread;
+    setNotifications(newNotifs);
+  }, []);
 
   const fetchNotifications = useCallback(async () => {
     if (!getToken()) return;
     try {
       const data = await api.get<Record<string, unknown>[]>('/api/notifications');
-      setNotifications(prev => {
-        const newNotifs = data.map(rowToNotif);
-        const newUnread = newNotifs.filter(n => !n.read).length;
-        if (newUnread > prevCountRef.current && prevCountRef.current > 0) {
-          const latest = newNotifs.find(n => !n.read);
-          if (latest) toast.info(latest.title, { description: latest.body });
-        }
-        prevCountRef.current = newUnread;
-        return newNotifs;
-      });
+      if (mountedRef.current) handleNewNotifs(data.map(rowToNotif));
     } catch { /* silent */ }
+  }, [handleNewNotifs]);
+
+  /* ── WebSocket connection with auto-reconnect ── */
+  const connectWS = useCallback(() => {
+    const token = getToken();
+    if (!token || !mountedRef.current) return;
+
+    const cleanup = () => {
+      if (wsRef.current) {
+        wsRef.current.onopen = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        try { wsRef.current.close(); } catch {}
+        wsRef.current = null;
+      }
+    };
+
+    cleanup();
+
+    try {
+      const url = getWsUrl(token);
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {};
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data as string);
+          if (data.type === 'notification') {
+            fetchNotifications();
+          }
+        } catch {}
+      };
+
+      ws.onclose = () => {
+        wsRef.current = null;
+        if (mountedRef.current) {
+          reconnectRef.current = setTimeout(connectWS, 5000);
+        }
+      };
+
+      ws.onerror = () => {
+        try { ws.close(); } catch {}
+      };
+    } catch {}
+  }, [fetchNotifications]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
   }, []);
 
   useEffect(() => {
     if (user?.id) {
       fetchNotifications();
-      pollRef.current = setInterval(fetchNotifications, 15_000);
+      connectWS();
+      /* Fallback polling every 30s (in case WS drops) */
+      pollRef.current = setInterval(fetchNotifications, 30_000);
     } else {
       setNotifications([]);
+      prevCountRef.current = 0;
+      if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
       if (pollRef.current) clearInterval(pollRef.current);
+      if (reconnectRef.current) clearTimeout(reconnectRef.current);
     }
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [user?.id, fetchNotifications]);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      if (reconnectRef.current) clearTimeout(reconnectRef.current);
+      if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
+    };
+  }, [user?.id, fetchNotifications, connectWS]);
 
   const markAsRead = useCallback(async (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));

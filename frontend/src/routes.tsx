@@ -12,6 +12,7 @@ import VerificationPage from './pages/VerificationPage';
 import AdminPage from './pages/AdminPage';
 import DisputePage from './pages/DisputePage';
 import NotificationsPage from './pages/NotificationsPage';
+import OwnerProfilePage from './pages/OwnerProfilePage';
 
 export interface RouteConfig {
   name: string;
@@ -39,4 +40,5 @@ export const routes: RouteConfig[] = [
   { name: 'Admin Settings', path: '/admin/settings', element: <AdminPage /> },
   { name: 'Dispute', path: '/dispute/:rentalId', element: <DisputePage /> },
   { name: 'Notifications', path: '/notifications', element: <NotificationsPage /> },
+  { name: 'Owner Profile', path: '/owner/:id', element: <OwnerProfilePage />, public: true },
 ];

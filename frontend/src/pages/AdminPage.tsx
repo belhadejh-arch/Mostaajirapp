@@ -19,6 +19,7 @@ import { useData } from '@/contexts/DataContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { api } from '@/api/client';
 import { toast } from 'sonner';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { cn } from '@/lib/utils';
 import type { AdminUser } from '@/contexts/AdminContext';
 import type { Dispute } from '@/types';
@@ -92,6 +93,10 @@ export default function AdminPage() {
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerTypeFilter, setLedgerTypeFilter] = useState('');
   const [financialSummary, setFinancialSummary] = useState<Record<string, unknown> | null>(null);
+  const [financials, setFinancials] = useState<Record<string, unknown> | null>(null);
+  const [financialsLoading, setFinancialsLoading] = useState(false);
+  const [payoutAlerts, setPayoutAlerts] = useState<Record<string, unknown>[]>([]);
+  const [payoutLoading, setPayoutLoading] = useState(false);
 
   // ── جلب إيجارات المستخدم عند فتح ملفه ──
   React.useEffect(() => {
@@ -118,6 +123,24 @@ export default function AdminPage() {
       .catch(() => {})
       .finally(() => setLedgerLoading(false));
   }, [tab, ledgerTypeFilter]);
+
+  useEffect(() => {
+    if (tab !== 'financials') return;
+    setFinancialsLoading(true);
+    api.get<Record<string, unknown>>('/api/admin/financials')
+      .then(data => setFinancials(data))
+      .catch(() => {})
+      .finally(() => setFinancialsLoading(false));
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== 'payout') return;
+    setPayoutLoading(true);
+    api.get<Record<string, unknown>[]>('/api/admin/payout-alerts')
+      .then(data => setPayoutAlerts(data))
+      .catch(() => {})
+      .finally(() => setPayoutLoading(false));
+  }, [tab]);
 
   // ── نظام التحديثات اللحظية والنشاط الأخير ──
   const [lastUpdate, setLastUpdate] = useState(Date.now());
@@ -356,6 +379,12 @@ export default function AdminPage() {
             </TabsTrigger>
             <TabsTrigger value="terms" className="gap-1.5">
               <ScrollText size={14} />سياسة الاستخدام
+            </TabsTrigger>
+            <TabsTrigger value="financials" className="gap-1.5">
+              <TrendingUp size={14} />المالية
+            </TabsTrigger>
+            <TabsTrigger value="payout" className="gap-1.5">
+              <DollarSign size={14} />مدفوعات
             </TabsTrigger>
           </TabsList>
 
@@ -1021,6 +1050,52 @@ export default function AdminPage() {
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* ── نسخ احتياطي واستعادة ── */}
+                <div className="mt-4 pt-4 border-t border-border space-y-3">
+                  <p className="text-sm font-semibold flex items-center gap-2">
+                    <HardDrive size={16} /> النسخ الاحتياطي والاستعادة
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <Button
+                      variant="outline" className="gap-2"
+                      onClick={async () => {
+                        try {
+                          const data = await api.get<Record<string, unknown>>('/api/admin/backup');
+                          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `mostajir-backup-${Date.now()}.json`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          toast.success('تم تصدير النسخة الاحتياطية بنجاح');
+                        } catch { toast.error('فشل التصدير'); }
+                      }}
+                    >
+                      <Download size={14} /> تصدير نسخة احتياطية
+                    </Button>
+                    <label className="cursor-pointer">
+                      <input type="file" accept=".json" className="hidden" onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const text = await file.text();
+                          const data = JSON.parse(text);
+                          await api.post('/api/admin/restore', { tables: data.tables || data });
+                          toast.success('تمت الاستعادة بنجاح');
+                        } catch { toast.error('فشلت الاستعادة — تأكد من صحة الملف'); }
+                        e.target.value = '';
+                      }} />
+                      <Button variant="outline" className="w-full gap-2" type="button" asChild>
+                        <span><Upload size={14} /> استعادة من نسخة احتياطية</span>
+                      </Button>
+                    </label>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    النسخة الاحتياطية تشمل: المنتجات، الإيجارات، النزاعات، التقييمات. لا تشمل: بيانات المستخدمين والمحافظ.
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -1215,6 +1290,157 @@ export default function AdminPage() {
                 <TermsContent />
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ── لوحة المالية والرسوم البيانية ── */}
+          <TabsContent value="financials">
+            <div className="space-y-6">
+              {financialsLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : !financials ? (
+                <p className="text-center text-muted-foreground py-12">لا توجد بيانات مالية بعد</p>
+              ) : (
+                <>
+                  {/* ── إيرادات الـ30 يوم الأخيرة ── */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <TrendingUp size={16} className="text-primary" />
+                        إيرادات المنصة — آخر 30 يوم (دج)
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={240}>
+                        <AreaChart data={(financials.daily as Record<string, unknown>[]) || []} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                          <defs>
+                            <linearGradient id="colorFee" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="day" tickFormatter={(v) => new Date(v as string).toLocaleDateString('ar-DZ', { day: '2-digit', month: '2-digit' })} tick={{ fontSize: 10 }} />
+                          <YAxis tickFormatter={(v) => `${Number(v).toLocaleString('ar-DZ')}`} tick={{ fontSize: 10 }} width={70} />
+                          <Tooltip
+                            formatter={(value) => [`${Number(value).toLocaleString('ar-DZ')} دج`, 'عمولة المنصة']}
+                            labelFormatter={(l) => new Date(l as string).toLocaleDateString('ar-DZ', { dateStyle: 'medium' })}
+                          />
+                          <Area type="monotone" dataKey="platform_fee" stroke="hsl(var(--primary))" fill="url(#colorFee)" strokeWidth={2} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  {/* ── الإيرادات الشهرية ── */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <TrendingUp size={16} />
+                        الإيرادات الشهرية — آخر 12 شهر (دج)
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={(financials.monthly as Record<string, unknown>[]) || []} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="month" tickFormatter={(v) => new Date(v as string).toLocaleDateString('ar-DZ', { month: 'short', year: '2-digit' })} tick={{ fontSize: 10 }} />
+                          <YAxis tickFormatter={(v) => `${(Number(v)/1000).toFixed(0)}k`} tick={{ fontSize: 10 }} width={45} />
+                          <Tooltip formatter={(value) => [`${Number(value).toLocaleString('ar-DZ')} دج`, 'إيراد']} labelFormatter={(l) => new Date(l as string).toLocaleDateString('ar-DZ', { month: 'long', year: 'numeric' })} />
+                          <Bar dataKey="platform_fee" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  {/* ── أكثر المؤجرين ربحاً ── */}
+                  {((financials.topOwners as Record<string, unknown>[]) || []).length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base">أكثر المؤجرين نشاطاً (مكتمل)</CardTitle>
+                      </CardHeader>
+                      <CardContent className="p-0">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">المؤجر</TableHead>
+                              <TableHead className="text-xs text-right">عدد الإيجارات</TableHead>
+                              <TableHead className="text-xs text-right">إجمالي الأرباح</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(financials.topOwners as Record<string, unknown>[]).slice(0, 8).map((o, i) => (
+                              <TableRow key={i}>
+                                <TableCell className="text-sm font-medium">{o.name as string}</TableCell>
+                                <TableCell className="text-xs text-right">{String(o.rentals_count)}</TableCell>
+                                <TableCell className="text-xs text-right font-semibold text-green-600">{fmt(o.total_earnings as number)} دج</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </CardContent>
+                    </Card>
+                  )}
+                </>
+              )}
+            </div>
+          </TabsContent>
+
+          {/* ── تنبيهات المدفوعات ── */}
+          <TabsContent value="payout">
+            <div className="space-y-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <DollarSign size={16} className="text-primary" />
+                    مؤجرون لديهم أرباح جاهزة للسحب
+                    {payoutAlerts.length > 0 && (
+                      <Badge className="bg-primary/10 text-primary border-primary/20">{payoutAlerts.length}</Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {payoutLoading ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">جارٍ التحميل...</p>
+                  ) : payoutAlerts.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-8">لا توجد أرباح معلقة</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">المؤجر</TableHead>
+                            <TableHead className="text-xs">الهاتف</TableHead>
+                            <TableHead className="text-xs">التوثيق</TableHead>
+                            <TableHead className="text-xs">الإيجارات المكتملة</TableHead>
+                            <TableHead className="text-xs text-right">رصيد الأرباح</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {payoutAlerts.map((o, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="text-sm font-medium">{o.name as string}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground" dir="ltr">{o.phone as string}</TableCell>
+                              <TableCell className="text-xs">
+                                {o.verification_status === 'verified'
+                                  ? <Badge className="bg-green-500/10 text-green-700 border-green-300 text-xs">موثق</Badge>
+                                  : <Badge variant="outline" className="text-xs">غير موثق</Badge>}
+                              </TableCell>
+                              <TableCell className="text-xs text-center">{String(o.completed_rentals)}</TableCell>
+                              <TableCell className="text-xs text-right font-bold text-primary">{fmt(o.earnings_balance as number)} دج</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+              <p className="text-xs text-muted-foreground text-center">
+                لمعالجة المدفوعات، انتقل إلى تبويب "طلبات السحب"
+              </p>
+            </div>
           </TabsContent>
 
         </Tabs>

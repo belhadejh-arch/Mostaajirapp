@@ -265,3 +265,16 @@ CREATE INDEX IF NOT EXISTS idx_rentals_owner_id ON rentals(owner_id);
 CREATE INDEX IF NOT EXISTS idx_rentals_renter_id ON rentals(renter_id);
 CREATE INDEX IF NOT EXISTS idx_products_owner_id ON products(owner_id);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
+
+-- Missing columns for auto-late cron
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS expected_end_at TIMESTAMPTZ;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS actual_end_at TIMESTAMPTZ;
+ALTER TABLE rentals ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
+
+-- Performance indexes
+CREATE INDEX IF NOT EXISTS idx_products_wilaya ON products(wilaya_code);
+CREATE INDEX IF NOT EXISTS idx_products_review_status ON products(review_status);
+CREATE INDEX IF NOT EXISTS idx_rentals_status ON rentals(status);
+CREATE INDEX IF NOT EXISTS idx_rentals_created_at ON rentals(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_products_created_at ON products(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
