@@ -22,7 +22,7 @@ interface DataContextType {
   addProduct: (data: Omit<Product, 'id' | 'totalRentals' | 'rating' | 'reviewCount' | 'ownerRating' | 'ownerReviewCount' | 'ownerTotalRentals' | 'createdAt'>) => Promise<void>;
   updateProduct: (productId: string, updates: Partial<Product>) => Promise<void>;
   toggleHideProduct: (productId: string) => Promise<void>;
-  deleteProduct: (productId: string) => Promise<void>;
+  deleteProduct: (productId: string, reason?: string) => Promise<void>;
   createRental: (params: { productId: string; durationHours?: number; durationDays?: number; renterId: string; renterName: string; renterPhone: string; renterAddress: string; renterWilaya: string; selfPickup: boolean; }) => Promise<string>;
   updateRentalStatus: (rentalId: string, status: RentalStatus) => Promise<void>;
   acceptRental: (rentalId: string) => Promise<void>;
@@ -161,16 +161,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [loadData]);
 
   const getTopRated = useCallback((limit = 8) =>
-    [...products].filter(p => p.reviewStatus === 'approved' && !p.isFrozen && !p.isHidden).sort((a, b) => b.rating - a.rating).slice(0, limit), [products]);
+    [...products].filter(p => !p.isFrozen && !p.isHidden).sort((a, b) => b.rating - a.rating).slice(0, limit), [products]);
 
   const getMostRented = useCallback((limit = 8) =>
-    [...products].filter(p => p.reviewStatus === 'approved' && !p.isFrozen && !p.isHidden).sort((a, b) => b.totalRentals - a.totalRentals).slice(0, limit), [products]);
+    [...products].filter(p => !p.isFrozen && !p.isHidden).sort((a, b) => b.totalRentals - a.totalRentals).slice(0, limit), [products]);
 
   const getNewArrivals = useCallback((limit = 8) =>
-    [...products].filter(p => p.reviewStatus === 'approved' && !p.isFrozen && !p.isHidden).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, limit), [products]);
+    [...products].filter(p => !p.isFrozen && !p.isHidden).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, limit), [products]);
 
   const getNearby = useCallback((wilayaCode: number, limit = 6) =>
-    products.filter(p => p.reviewStatus === 'approved' && p.wilayaCode === wilayaCode && !p.isFrozen && !p.isHidden).slice(0, limit), [products]);
+    products.filter(p => p.wilayaCode === wilayaCode && !p.isFrozen && !p.isHidden).slice(0, limit), [products]);
 
   const getProductById = useCallback((id: string) => products.find(p => p.id === id), [products]);
 
@@ -217,8 +217,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setProducts(prev => prev.map(p => p.id === productId ? { ...p, isHidden: !p.isHidden } : p));
   }, [products]);
 
-  const deleteProduct = useCallback(async (productId: string) => {
-    await api.delete(`/api/products/${productId}`);
+  const deleteProduct = useCallback(async (productId: string, reason?: string) => {
+    const token = localStorage.getItem('mostajir_token');
+    const base = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+    await fetch(`${base}/api/products/${productId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ reason: reason || '' }),
+    });
     setProducts(prev => prev.filter(p => p.id !== productId));
   }, []);
 

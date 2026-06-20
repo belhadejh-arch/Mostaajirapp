@@ -11,7 +11,6 @@ router.get('/', async (req, res) => {
     const params = [];
 
     if (!all) {
-      conditions.push(`review_status='approved'`);
       conditions.push(`is_frozen=false`);
       conditions.push(`is_hidden=false`);
     }
@@ -46,7 +45,7 @@ router.get('/public/:ownerId', async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT * FROM products
-       WHERE owner_id=$1 AND review_status='approved' AND is_frozen=false AND is_hidden=false
+       WHERE owner_id=$1 AND is_frozen=false AND is_hidden=false
        ORDER BY created_at DESC LIMIT 50`,
       [req.params.ownerId]
     );
@@ -78,7 +77,7 @@ router.post('/', requireAuth, async (req, res) => {
         video_uri, category_id, subcategory_id, wilaya_code, wilaya_name,
         purchase_price, purchase_year, rental_price, deposit, commission_rate,
         delivery_available, stock_quantity, available_quantity, review_status
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,'pending')
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,'approved')
       RETURNING *`,
       [
         d.owner_id, d.owner_name, d.owner_avatar_uri || null, d.owner_phone || null,
@@ -143,13 +142,36 @@ router.put('/:id', requireAuth, async (req, res) => {
 });
 
 router.delete('/:id', requireAuth, async (req, res) => {
+  const { reason } = req.body || {};
+  const client = await pool.connect();
   try {
-    await pool.query(`DELETE FROM products WHERE id=$1 AND (owner_id=$2 OR $3)`,
-      [req.params.id, req.userId, req.isAdmin]);
+    await client.query('BEGIN');
+    const { rows: [product] } = await client.query(`SELECT * FROM products WHERE id=$1`, [req.params.id]);
+    if (!product) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Not found' }); }
+    if (product.owner_id !== req.userId && !req.isAdmin) {
+      await client.query('ROLLBACK'); return res.status(403).json({ error: 'Forbidden' });
+    }
+    await client.query(`DELETE FROM products WHERE id=$1`, [req.params.id]);
+    /* إشعار المالك عند الحذف من قِبل الإدارة */
+    if (req.isAdmin && product.owner_id !== req.userId) {
+      const reasonText = reason?.trim() || 'لم يُحدد سبب';
+      await client.query(
+        `INSERT INTO notifications (user_id, title, body, type) VALUES ($1,$2,$3,'product')`,
+        [
+          product.owner_id,
+          '🗑️ تم حذف منتجك من قِبل الإدارة',
+          `تم حذف منتجك "${product.title}" من المنصة.\nالسبب: ${reasonText}.\nإذا كان لديك استفسار، تواصل مع الدعم.`,
+        ]
+      );
+    }
+    await client.query('COMMIT');
     res.json({ ok: true });
   } catch (e) {
+    await client.query('ROLLBACK');
     console.error(e);
     res.status(500).json({ error: 'Server error' });
+  } finally {
+    client.release();
   }
 });
 

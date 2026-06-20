@@ -1897,7 +1897,7 @@ export default function AdminPage() {
                 disabled={!productDeleteReason.trim()}
                 onClick={() => {
                   if (productDeleteId && productDeleteReason.trim()) {
-                    deleteProduct(productDeleteId);
+                    deleteProduct(productDeleteId, productDeleteReason.trim());
                     toast.success(t('productDeleted'));
                     setProductDeleteId(null);
                     setProductDeleteReason('');

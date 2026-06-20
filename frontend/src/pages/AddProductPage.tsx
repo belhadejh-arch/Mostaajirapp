@@ -19,7 +19,8 @@ import { WILAYAS } from '@/constants/wilayas';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
-const MIN_IMAGES = 10;
+const MIN_IMAGES = 5;
+const MAX_VIDEO_MB = 25;
 
 export default function AddProductPage() {
   const { t, isRTL, language } = useLanguage();
@@ -64,9 +65,15 @@ export default function AddProductPage() {
 
   const handleVideoFile = (files: FileList | null) => {
     if (!files?.[0]) return;
+    const file = files[0];
+    const mb = file.size / (1024 * 1024);
+    if (mb > MAX_VIDEO_MB) {
+      toast.error(`حجم الفيديو يتجاوز ${MAX_VIDEO_MB} ميغابايت. يرجى اختيار فيديو أصغر.`);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = e => setVideoUri(e.target?.result as string);
-    reader.readAsDataURL(files[0]);
+    reader.readAsDataURL(file);
   };
 
   const removeImage = (idx: number) =>
@@ -117,13 +124,13 @@ export default function AddProductPage() {
       deliveryAvailable, status: 'available',
       stockQuantity: qty, availableQuantity: qty,
       isHidden: false,
-      reviewStatus: 'pending' as const,
+      reviewStatus: 'approved' as const,
       ownerId: user.id, ownerName: user.name, ownerAvatarUri: user.avatarUri,
       ownerPhone: user.phone, ownerAddress: user.address,
       ownerWilayaCode: user.wilayaCode, ownerWilayaName: user.wilayaName,
     });
     setLoading(false);
-    toast.success('تم رفع المنتج بنجاح! سيتم مراجعته من قِبل الإدارة قبل النشر.');
+    toast.success('🎉 تم نشر منتجك بنجاح وهو متاح الآن للمستأجرين!');
     navigate('/');
   };
 
