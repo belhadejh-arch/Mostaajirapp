@@ -1,3 +1,5 @@
-- [MOSTAJIR stack & DB](mostajir-stack.md) — React/Vite:5000 + Express:3001 + Neon PostgreSQL via NEON_DB_URL
+- [MOSTAJIR stack & DB](mostajir-stack.md) — React/Vite:5000 + Express:3001 + Replit PostgreSQL via DATABASE_URL
 - [Notification pattern](mostajir-notifications.md) — All notifications use INSERT into notifications table server-side, never via frontend API calls
-- [Product review flow](mostajir-product-review.md) — Products insert with review_status='pending'; admin approves to make public; DataContext filters client-side
+- [Product review flow](mostajir-product-review.md) — Products publish immediately (review_status='approved' on INSERT); no admin approval step; DataContext no longer filters by reviewStatus
+- [Upload architecture](mostajir-uploads.md) — Images/video stored as files on disk (server/uploads/), NOT base64 in DB; Vite proxies /uploads to backend; compressImage() in AddProductPage uses Canvas API before upload
+- [Auth 401 handling](mostajir-auth-401.md) — client.ts throws UnauthorizedError (never clears token); only AuthContext.loadMe clears token on 401 from /api/auth/me; other 401s (rentals etc.) are silently ignored
