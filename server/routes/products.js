@@ -1,6 +1,24 @@
 const router = require('express').Router();
 const { pool } = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const path = require('path');
+const fs = require('fs');
+
+const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+
+/* حذف ملف محلي بأمان — يتجاهل إذا لم يكن موجوداً أو خارجياً */
+function deleteUploadFile(url) {
+  if (!url || !url.startsWith('/uploads/')) return;
+  const filename = path.basename(url);
+  const filepath = path.join(UPLOAD_DIR, filename);
+  fs.unlink(filepath, () => {}); /* fire-and-forget */
+}
+
+function deleteProductFiles(product) {
+  const images = Array.isArray(product.images) ? product.images : [];
+  images.forEach(deleteUploadFile);
+  if (product.video_uri) deleteUploadFile(product.video_uri);
+}
 
 router.get('/', async (req, res) => {
   try {
@@ -111,6 +129,8 @@ router.put('/:id', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    /* احفظ الصور القديمة قبل التحديث لحذف المحذوفة منها */
+    const { rows: [before] } = await client.query(`SELECT images, video_uri FROM products WHERE id=$1`, [req.params.id]);
     const keys = Object.keys(updates);
     const vals = Object.values(updates);
     const set = keys.map((k, i) => `${k}=$${i + 2}`).join(',');
@@ -133,6 +153,15 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    /* حذف الصور القديمة التي أُزيلت من المنتج */
+    if (before && updates.images) {
+      const oldImages = Array.isArray(before.images) ? before.images : [];
+      const newImages = Array.isArray(updates.images) ? updates.images : [];
+      const removed = oldImages.filter(url => !newImages.includes(url));
+      removed.forEach(deleteUploadFile);
+    }
+
     res.json(row);
   } catch (e) {
     await client.query('ROLLBACK');
@@ -167,6 +196,8 @@ router.delete('/:id', requireAuth, async (req, res) => {
       );
     }
     await client.query('COMMIT');
+    /* حذف ملفات الصور والفيديو من القرص بعد نجاح المعاملة */
+    deleteProductFiles(product);
     res.json({ ok: true });
   } catch (e) {
     await client.query('ROLLBACK');
