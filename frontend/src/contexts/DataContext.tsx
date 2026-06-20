@@ -13,6 +13,7 @@ interface DataContextType {
   products: Product[];
   rentals: Rental[];
   disputes: Dispute[];
+  productsLoaded: boolean;
   getTopRated: (limit?: number) => Product[];
   getMostRented: (limit?: number) => Product[];
   getNewArrivals: (limit?: number) => Product[];
@@ -141,22 +142,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [disputes, setDisputes] = useState<Dispute[]>([]);
+  const [productsLoaded, setProductsLoaded] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const loadData = useCallback(async () => {
+  /* تحميل المنتجات فوراً بشكل مستقل — لا ننتظر الإيجارات */
+  const loadProducts = useCallback(async () => {
     try {
-      const [pData, rData] = await Promise.all([
-        api.get<Record<string, unknown>[]>('/api/products'),
-        api.get<Record<string, unknown>[]>('/api/rentals').catch(() => [] as Record<string, unknown>[]),
-      ]);
+      const pData = await api.get<Record<string, unknown>[]>('/api/products');
       setProducts(pData.map(rowToProduct));
-      setRentals(rData.map(rowToRental));
-    } catch { /* silent */ }
+    } catch { /* silent */ } finally {
+      setProductsLoaded(true);
+    }
   }, []);
+
+  const loadRentals = useCallback(async () => {
+    try {
+      const rData = await api.get<Record<string, unknown>[]>('/api/rentals');
+      setRentals(rData.map(rowToRental));
+    } catch { /* 401 = not logged in; ignore silently */ }
+  }, []);
+
+  const loadData = useCallback(async () => {
+    /* products أولاً للظهور الفوري، ثم rentals */
+    loadProducts();
+    loadRentals();
+  }, [loadProducts, loadRentals]);
 
   useEffect(() => {
     loadData();
-    pollRef.current = setInterval(loadData, 30_000);
+    pollRef.current = setInterval(loadData, 60_000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [loadData]);
 
@@ -367,7 +381,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <DataContext.Provider value={{
-      products, rentals, disputes,
+      products, rentals, disputes, productsLoaded,
       getTopRated, getMostRented, getNewArrivals, getNearby,
       getProductById, getCategoryName,
       addProduct, updateProduct, toggleHideProduct, deleteProduct,

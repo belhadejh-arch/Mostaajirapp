@@ -4,6 +4,7 @@ import { ChevronRight, ChevronLeft, Package, TrendingUp, Star, Wallet, ShieldChe
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ProductCard } from '@/components/ProductCard';
 import { SearchBar } from '@/components/SearchBar';
 import { AppLayout } from '@/components/layouts/AppLayout';
@@ -36,9 +37,26 @@ function ProductRow({ products }: { products: Product[] }) {
   );
 }
 
+function ProductRowSkeleton() {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="rounded-xl overflow-hidden border border-border bg-card">
+          <Skeleton className="h-36 w-full" />
+          <div className="p-3 space-y-2">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+            <Skeleton className="h-4 w-1/3" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── لوحة المؤجر ── */
 function OwnerDashboard() {
-  const { t, isRTL } = useLanguage();
+  const { isRTL } = useLanguage();
   const { user } = useAuth();
   const { getOwnerStats } = useData();
   const navigate = useNavigate();
@@ -115,7 +133,7 @@ function RenterDashboard() {
 export default function HomePage() {
   const { t, isRTL, language } = useLanguage();
   const { user } = useAuth();
-  const { getTopRated, getMostRented, getNewArrivals, getNearby } = useData();
+  const { getTopRated, getMostRented, getNewArrivals, getNearby, productsLoaded } = useData();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState<string | null>(null);
@@ -203,23 +221,23 @@ export default function HomePage() {
         {/* Top Rated */}
         <div>
           <SectionHeader title={t('topRated')} onSeeAll={() => navigate('/explore?sort=rating')} isRTL={isRTL} />
-          <ProductRow products={topRated} />
+          {!productsLoaded ? <ProductRowSkeleton /> : <ProductRow products={topRated} />}
         </div>
 
         {/* Most Rented */}
         <div>
           <SectionHeader title={t('mostRented')} onSeeAll={() => navigate('/explore?sort=rentals')} isRTL={isRTL} />
-          <ProductRow products={mostRented} />
+          {!productsLoaded ? <ProductRowSkeleton /> : <ProductRow products={mostRented} />}
         </div>
 
         {/* New Arrivals */}
         <div>
           <SectionHeader title={t('newArrivals')} onSeeAll={() => navigate('/explore?sort=newest')} isRTL={isRTL} />
-          <ProductRow products={newArrivals.slice(0, 4)} />
+          {!productsLoaded ? <ProductRowSkeleton /> : <ProductRow products={newArrivals.slice(0, 4)} />}
         </div>
 
         {/* Nearby */}
-        {nearby.length > 0 && (
+        {productsLoaded && nearby.length > 0 && (
           <div>
             <SectionHeader title={t('nearbyProducts')} isRTL={isRTL} />
             <ProductRow products={nearby} />
@@ -229,4 +247,3 @@ export default function HomePage() {
     </AppLayout>
   );
 }
-

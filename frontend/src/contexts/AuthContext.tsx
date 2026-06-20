@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { api, setToken, clearToken, getToken } from '@/api/client';
+import { api, setToken, clearToken, getToken, UnauthorizedError } from '@/api/client';
+import { toast } from 'sonner';
 import type { User } from '@/types';
 
 interface AuthContextType {
@@ -46,13 +47,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await api.get<Record<string, unknown>>('/api/auth/me');
       setUser(rowToUser(data));
     } catch (err: unknown) {
-      // امسح التوكن فقط عند رفض المصادقة (401) وليس عند أخطاء الشبكة أو انقطاع الاتصال
-      const msg = (err as Error).message || '';
-      if (msg === 'Unauthorized' || msg.includes('401')) {
+      if (err instanceof UnauthorizedError) {
         clearToken();
         setUser(null);
       }
-      // في حالة خطأ الشبكة: لا نمسح التوكن حتى لا يُسجَّل الخروج تلقائياً
+      /* أخطاء الشبكة: لا نمسح التوكن */
     }
   }, []);
 
@@ -64,10 +63,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadMe]);
 
-  // Poll profile every 30s to pick up verification status / balance changes
+  /* تحديث بيانات المستخدم كل 60 ثانية فقط */
   useEffect(() => {
     if (!user?.id) { if (pollRef.current) clearInterval(pollRef.current); return; }
-    pollRef.current = setInterval(loadMe, 30_000);
+    pollRef.current = setInterval(loadMe, 60_000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [user?.id, loadMe]);
 
@@ -80,8 +79,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(rowToUser(userData));
       return true;
     } catch (err: unknown) {
-      const msg = (err as Error).message || 'فشل تسجيل الدخول';
-      alert('❌ خطأ في تسجيل الدخول: ' + msg);
+      const msg = (err as Error).message || '';
+      if (msg === 'Invalid credentials') {
+        toast.error('البريد الإلكتروني أو كلمة المرور غير صحيحة');
+      } else if (msg === 'Account banned') {
+        toast.error('تم تعليق هذا الحساب. تواصل مع الدعم.');
+      } else {
+        toast.error('فشل تسجيل الدخول. تحقق من اتصالك بالإنترنت.');
+      }
       return false;
     }
   }, []);
@@ -102,8 +107,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(rowToUser(userData));
       return true;
     } catch (err: unknown) {
-      const msg = (err as Error).message || 'فشل إنشاء الحساب';
-      alert('❌ خطأ في التسجيل: ' + msg);
+      const msg = (err as Error).message || '';
+      if (msg.includes('already') || msg.includes('409') || msg === 'Email already registered') {
+        toast.error('هذا البريد الإلكتروني مسجل مسبقاً');
+      } else {
+        toast.error('فشل إنشاء الحساب. تحقق من اتصالك بالإنترنت.');
+      }
       return false;
     }
   }, []);

@@ -31,6 +31,8 @@ router.get('/', async (req, res) => {
       `SELECT * FROM products WHERE ${where} ORDER BY ${orderBy} LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params
     );
+    /* كاش خفيف للمتصفح: 30 ثانية — يُخفف الضغط على الخادم */
+    if (!all) res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
     res.json(rows);
   } catch (e) {
     console.error(e);

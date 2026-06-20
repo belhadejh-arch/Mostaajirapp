@@ -23,11 +23,14 @@ function headers(extra?: Record<string, string>): Record<string, string> {
   return h;
 }
 
+export class UnauthorizedError extends Error {
+  constructor() { super('Unauthorized'); this.name = 'UnauthorizedError'; }
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   const body = await res.json().catch(() => ({}));
   if (res.status === 401) {
-    clearToken();
-    throw new Error('Unauthorized');
+    throw new UnauthorizedError();
   }
   if (!res.ok) throw new Error((body as { error?: string }).error || `HTTP ${res.status}`);
   return body as T;
