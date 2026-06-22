@@ -97,7 +97,7 @@ router.post('/', requireAuth, async (req, res) => {
         video_uri, category_id, subcategory_id, wilaya_code, wilaya_name,
         purchase_price, purchase_year, rental_price, deposit, commission_rate,
         delivery_available, stock_quantity, available_quantity, review_status
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,'approved')
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$22,'pending')
       RETURNING *`,
       [
         d.owner_id, d.owner_name, d.owner_avatar_uri || null, d.owner_phone || null,
