@@ -43,7 +43,7 @@ router.post('/login', async (req, res) => {
     res.json({ token, user: { ...profile, email: user.email } });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error', details: e.message });
   }
 });
 
