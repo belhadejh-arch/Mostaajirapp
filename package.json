@@ -10,7 +10,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "cloudinary": "^2.10.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
     "html5-qrcode": "^2.3.8",
-    "jsqr": "^1.4.0"
+    "jsqr": "^1.4.0",
+    "multer": "^2.2.0",
+    "pg": "^8.22.0"
   }
 }

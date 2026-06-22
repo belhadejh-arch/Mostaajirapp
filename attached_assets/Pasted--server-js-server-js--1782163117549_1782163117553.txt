@@ -1,0 +1,191 @@
+الملف الأول: الباك إند بالكامل (server.js)
+​احذف كل شيء في ملف server.js وضَع هذا الكود الموحد مكانه دفعة واحدة:
+
+
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
+const { Pool } = require('pg');
+const cloudinary = require('cloudinary').v2;
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// ====== [ 1. إعدادات السيرفر وسعة الملفات ] ======
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
+app.use(cors({ origin: '*' }));
+
+// ====== [ 2. إعدادات حساب Cloudinary المجاني ] ======
+// يمكنك وضع بياناتك هنا مباشرة بين العلامات النصية أو استخدام Replit Secrets
+cloudinary.config({ 
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'ضع_هنا_CLOUD_NAME', 
+  api_key: process.env.CLOUDINARY_API_KEY || 'ضع_هنا_API_KEY', 
+  api_secret: process.env.CLOUDINARY_API_SECRET || 'ضع_هنا_API_SECRET' 
+});
+
+// ====== [ 3. الاتصال بقاعدة بيانات Neon SQL ] ======
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL, // تأكد من وجود رابط قاعدة البيانات في بيئة العمل
+  ssl: { rejectUnauthorized: false }
+});
+
+// ====== [ 4. إعداد الملتير للتخزين المؤقت في الذاكرة ] ======
+const storage = multer.memoryStorage();
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 100 * 1024 * 1024 } // حد أقصى 100 ميجابايت للملف
+});
+
+// ====== [ 5. المسارات البرمجية Routes ] ======
+
+// أ) جلب المنتجات للزوار فوراً وبدون تسجيل دخول
+app.get('/api/products', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM products ORDER BY id DESC');
+    return res.status(200).json(result.rows);
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ب) استقبال الملف ورفعه سحابياً ثم حفظ الرابط في Neon
+app.post('/api/products', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: "لم يتم استقبال أي ملف حقيقي من الواجهة!" });
+    }
+
+    // تحويل بايتات الملف من الذاكرة المؤقتة إلى صيغة قابلة للرفع
+    const b64 = Buffer.from(req.file.buffer).toString("base64");
+    let dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+
+    // الرفع المباشر إلى سحابة Cloudinary الدائمة
+    const cloudinaryResponse = await cloudinary.uploader.upload(dataURI, {
+      resource_type: "auto", // للتعرف تلقائياً على الصور أو الفيديوهات
+      folder: "mostaajir_products" // اسم المجلد داخل السحابة
+    });
+
+    // الرابط العالمي الثابت الممنوح للملف
+    const imageUrl = cloudinaryResponse.secure_url;
+    const { title, description, price } = req.body;
+
+    // إدخال البيانات والروابط الدائمة في قاعدة بيانات Neon
+    const query = `
+      INSERT INTO products (title, description, price, image_url) 
+      VALUES ($1, $2, $3, $4) 
+      RETURNING *
+    `;
+    const values = [title, description, price, imageUrl];
+    const result = await pool.query(query, values);
+
+    return res.status(201).json({ success: true, product: result.rows[0] });
+
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// مسار اختباري للسيرفر
+app.get('/', (req, res) => {
+    res.send('السيرفر السحابي الموحد يعمل بنجاح ومستعد لاستقبال الملفات!');
+});
+
+// تشغيل السيرفر
+app.listen(PORT, () => {
+    console.log(`السيرفر يعمل بنجاح على المنفذ: ${PORT}`);
+});
+
+
+ الملف الثاني: واجهة صفحة الرفع بالكامل (AddProduct.jsx)
+​افتح ملف واجهة إضافة المنتجات في الفرونت إند وضَع هذا الكود مكانه بالكامل:
+
+import React, { useState } from 'react';
+import axios from 'axios';
+
+function AddProduct() {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [price, setPrice] = useState('');
+  const [file, setFile] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleFileChange = (e) => {
+    // التقاط كائن الملف الفعلي ببايتاته وحجمه الكامل من جهاز المستخدم
+    setFile(e.target.files[0]); 
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!file) {
+      alert("الرجاء اختيار ملف الصورة أو الفيديو أولاً!");
+      return;
+    }
+
+    setLoading(true);
+
+    // تجميع البيانات داخل كائن FormData لنقل بايتات الملف الحقيقي عبر الشبكة
+    const formData = new FormData();
+    formData.append('title', title);
+    formData.append('description', description);
+    formData.append('price', price);
+    formData.append('image', file); // الاسم 'image' يجب أن يطابق المكتوب بالسيرفر تماماً
+
+    try {
+      // ⚠️ استبدل هذا الرابط برابط سيرفر الباك إند الخاص بك على Render المجاني
+      const res = await axios.post('https://your-backend-free-url.onrender.com/api/products', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data' // إجبار المتصفح على معالجة الرفع الحقيقي للبيانات الكبيرة
+        }
+      });
+
+      if (res.data.success) {
+        alert("تم الرفع السحابي وحفظ المنتج في قاعدة البيانات بنجاح، وظهوره دائم الآن!");
+        // إعادة تهيئة الحقول بعد النجاح
+        setTitle('');
+        setDescription('');
+        setPrice('');
+        setFile(null);
+      }
+    } catch (error) {
+      alert("خطأ أثناء عملية الرفع: " + (error.response?.data?.message || error.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: '500px', margin: '40px auto', padding: '20px', border: '1px solid #ddd', borderRadius: '8px', fontFamily: 'sans-serif', direction: 'rtl' }}>
+      <h3 style={{ textAlign: 'center', marginBottom: '20px' }}>إضافة منتج أو معدات جديدة (رفع سحابي دائم)</h3>
+      <form onSubmit={handleSubmit}>
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ fontWeight: 'bold' }}>اسم المنتج / المعدات:</label>
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} required style={{ width: '100%', padding: '10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #ccc' }} />
+        </div>
+        
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ fontWeight: 'bold' }}>الوصف وتفاصيل التأمين والكراء:</label>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} required style={{ width: '100%', padding: '10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #ccc', minHeight: '100px' }} />
+        </div>
+
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ fontWeight: 'bold' }}>سعر الكراء اليومي (دج):</label>
+          <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} required style={{ width: '100%', padding: '10px', marginTop: '5px', borderRadius: '4px', border: '1px solid #ccc' }} />
+        </div>
+
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ fontWeight: 'bold' }}>اختر ملف الصورة أو فيديو المعاينة:</label>
+          <input type="file" accept="image/*,video/*" onChange={handleFileChange} required style={{ width: '100%', marginTop: '5px' }} />
+        </div>
+
+        <button type="submit" disabled={loading} style={{ width: '100%', padding: '12px', backgroundColor: loading ? '#6c757d' : '#007bff', color: '#fff', border: 'none', borderRadius: '5px', cursor: loading ? 'not-allowed' : 'pointer', fontSize: '16px' }}>
+          {loading ? 'جاري الرفع والمعالجة السحابية الآمنة...' : 'نشر وتثبيت المنتج فوراً'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default AddProduct;
+
+
