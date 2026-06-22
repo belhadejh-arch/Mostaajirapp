@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "postgresql-16"]
+modules = ["nodejs-20", "web", "postgresql-16"]
 [nix]
 channel = "stable-25_05"
 
@@ -103,6 +103,7 @@ externalPort = 8080
 [userenv.shared]
 NODE_ENV = "development"
 PORT = "3001"
+JWT_SECRET = "mostajir_jwt_idygqridnrhw636lhot9k"
 
 [userenv.development]
 
